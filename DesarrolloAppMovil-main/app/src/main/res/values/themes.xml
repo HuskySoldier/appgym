@@ -1,0 +1,6 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Use Material3 DayNight theme from Material Components -->
+    <style name="Theme.GymTastic" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Keep minimal to avoid missing attrs at link time -->
+    </style>
+</resources>

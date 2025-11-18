@@ -1,0 +1,12 @@
+// Top-level build file
+buildscript {
+    ext {
+        kotlin_version = '1.9.25'
+        agp_version = '8.13.0'
+    }
+}
+plugins {
+    id 'com.android.application' version '8.13.1' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.25' apply false
+    id 'org.jetbrains.kotlin.kapt'    version '1.9.25' apply false // <- iguala
+}

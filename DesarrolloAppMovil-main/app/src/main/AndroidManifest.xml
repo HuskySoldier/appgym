@@ -1,0 +1,62 @@
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="cl.gymtastic.app"> <!-- El identificador único de tu aplicación en el sistema y en Google Play. -->
+
+    <!-- ================== Permisos Solicitados ================== -->
+    <!-- Permisos que tu aplicación necesita para funcionar correctamente. El usuario deberá aceptarlos (algunos implícitamente, otros explícitamente). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- ================== Configuración de la Aplicación ================== -->
+    <!-- Define propiedades globales de la aplicación. -->
+    <application
+        android:name=".GymTasticApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GymTastic">
+
+        <!-- API Key de Google Maps. Obligatoria para usar los servicios de Google Maps (como el mapa en PaymentScreen). -->
+         <!-- se recomienda no guardar la api key directamente aqui -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDhHxmFhQIbLUFt_PvyiqBxn9RlNJZCxls" />
+
+        <!-- FileProvider: Permite compartir archivos de forma segura con otras apps (como la cámara). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="cl.gymtastic.app.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <!-- Define las rutas que el FileProvider puede compartir. -->
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- ================== Declaración de Activities ================== -->
+        <!-- Aquí se declaran todas las "pantallas" principales -->
+
+        <!-- MainActivity: La pantalla principal que se lanza al abrir la app. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <!-- Intent Filter: Indica cómo se puede lanzar esta Activity. -->
+            <intent-filter>
+                <!-- Acción Principal: Indica que esta es la entrada principal de la app. -->
+                <action android:name="android.intent.action.MAIN" />
+                <!-- Categoría Launcher: Hace que aparezca en el lanzador de aplicaciones del dispositivo. -->
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Aquí podrías declarar otras Activities si las tuvieras -->
+
+    </application>
+</manifest>

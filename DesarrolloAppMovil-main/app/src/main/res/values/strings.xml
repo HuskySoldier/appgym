@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">GymTastic</string>
+    <string name="notif_channel_name">Recordatorios GymTastic</string>
+    <string name="notif_channel_desc">Recordatorios diarios</string>
+</resources>
