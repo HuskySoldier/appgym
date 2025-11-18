@@ -41,7 +41,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import cl.gymtastic.app.ui.navigation.NavRoutes
-import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 
 @SuppressLint("UnrememberedMutableState")

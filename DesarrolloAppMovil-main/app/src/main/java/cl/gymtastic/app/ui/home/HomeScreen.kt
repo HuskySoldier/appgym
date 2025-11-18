@@ -59,6 +59,13 @@ fun HomeScreen(
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
 
+    // --- Repositorios y API ---
+    val productsRepo = remember { ServiceLocator.products(ctx) }
+    val trainersRepo = remember { ServiceLocator.trainers(ctx) }
+    val attendanceRepo = remember { ServiceLocator.attendance(ctx) }
+    val bookingsRepo = remember { ServiceLocator.bookings(ctx) }
+
+
     // Ruta actual
     val currentRoute = nav.currentBackStackEntryFlow
         .collectAsState(initial = nav.currentBackStackEntry)
@@ -67,12 +74,9 @@ fun HomeScreen(
     // --- Sesión de Autenticación y Datos del Usuario ---
     val session = remember { ServiceLocator.auth(ctx).prefs() }
     val authEmail by session.userEmailFlow.collectAsStateWithLifecycle(initialValue = "")
-    // --- ELIMINADO isAdmin basado en email ---
-    // val isAdmin = authEmail.equals("admin@gymtastic.cl", ignoreCase = true)
 
     // --- Obtener DAOs ---
     val usersDao = remember { GymTasticDatabase.get(ctx).users() }
-    val attendanceDao = remember { GymTasticDatabase.get(ctx).attendance() } // <-- DAO de Asistencia
 
     // --- Observar UserEntity (para estado del plan y rol) ---
     val userEntity by remember(authEmail) {
@@ -90,11 +94,25 @@ fun HomeScreen(
     // --- Observar Lista de Asistencia desde Room ---
     val attendanceList by remember(authEmail) {
         if (authEmail.isNotBlank()) {
-            attendanceDao.observeByUser(authEmail) // Observa la lista de AttendanceEntity
+            attendanceRepo.observe(authEmail) // Observa la lista de AttendanceEntity desde Room
         } else {
             flowOf(emptyList()) // Lista vacía si no hay email
         }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // --- SINCRONIZACIÓN INICIAL DE DATOS AL ENTRAR EN HOME ---
+    LaunchedEffect(authEmail) {
+        if (authEmail.isNotBlank()) {
+            scope.launch {
+                // Iniciar refresco de datos en paralelo
+                productsRepo.refreshProductsFromApi()
+                trainersRepo.refreshTrainersFromApi()
+                attendanceRepo.syncHistoryFromApi(authEmail) // <-- Sincronizar historia de asistencia
+                bookingsRepo.refreshUserBookings(authEmail) // <-- Sincronizar reservas
+            }
+        }
+    }
+    // --- FIN SINCRONIZACIÓN ---
 
     // --- Calcular CheckCounts a partir de la lista de asistencia ---
     val calculatedCounts by remember(attendanceList) {
@@ -534,4 +552,3 @@ private fun HomeContent(
         }
     }
 }
-

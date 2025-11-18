@@ -36,6 +36,10 @@ interface ProductsDao {
     @Query("SELECT * FROM products")
     suspend fun getAll(): List<ProductEntity>
 
+    // --- NUEVO: Limpiar todo (para sincronización) ---
+    @Query("DELETE FROM products")
+    suspend fun clearAll()
+
     @Query("SELECT * FROM products WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<Int>): List<ProductEntity>
 

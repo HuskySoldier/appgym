@@ -28,6 +28,7 @@ import cl.gymtastic.app.work.BookingReminderWorker
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+import java.io.IOException // <-- Importar IOException para manejar errores de red
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,8 +41,12 @@ fun BookingScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // --- Trainers desde Room ---
-    val trainersFlow = remember { ServiceLocator.trainers(ctx).observeAll() }
+    // --- Repositorios ---
+    val trainersRepo = remember { ServiceLocator.trainers(ctx) }
+    val bookingsRepo = remember { ServiceLocator.bookings(ctx) }
+
+    // --- Trainers desde Room (cache) ---
+    val trainersFlow = remember { trainersRepo.observeAll() }
     val trainers by trainersFlow.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // --- Opciones de Fecha y Hora ---
@@ -199,10 +204,10 @@ fun BookingScreen(
 
                                 scope.launch {
                                     try {
-                                        // 1. Guardar la reserva
-                                        ServiceLocator.bookings(ctx).create(
+                                        // 1. Guardar la reserva (Llamada a la API)
+                                        bookingsRepo.create( // <-- USAR EL REPO MODIFICADO
                                             userEmail = authEmail,
-                                            trainerId = selectedTrainer.id.toLong(), // Convertir ID a Long si es necesario por el Repo/DAO
+                                            trainerId = selectedTrainer.id,
                                             fechaHora = millis
                                         )
 
@@ -227,8 +232,11 @@ fun BookingScreen(
                                         snackbar.showSnackbar("Reserva creada con $trainerName para $selectedTime del $dateLabel. Recordatorio programado.")
                                         nav.popBackStack()
 
+                                    } catch (e: IOException) {
+                                        Log.e("BookingScreen", "Error de red/servidor al crear reserva", e)
+                                        snackbar.showSnackbar("Error al crear la reserva: ${e.message ?: "desconocido"}")
                                     } catch (e: Exception) {
-                                        Log.e("BookingScreen", "Error al crear reserva o programar worker", e)
+                                        Log.e("BookingScreen", "Error inesperado al crear reserva", e)
                                         snackbar.showSnackbar("Error al crear la reserva: ${e.message ?: "desconocido"}")
                                     } finally {
                                         loading = false
@@ -272,4 +280,3 @@ private fun combineDateAndTime(date: Triple<Int, Int, Int>, time: String): Long 
     }
     return cal.timeInMillis
 }
-

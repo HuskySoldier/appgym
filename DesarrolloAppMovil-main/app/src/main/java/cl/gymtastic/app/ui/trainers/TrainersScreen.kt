@@ -30,7 +30,6 @@ import androidx.navigation.NavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cl.gymtastic.app.data.local.entity.TrainerEntity
 import cl.gymtastic.app.ui.navigation.Screen
-import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage // <-- Importado
 import coil.compose.SubcomposeAsyncImageContent // <-- Importado
 

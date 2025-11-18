@@ -49,7 +49,6 @@ import cl.gymtastic.app.data.local.entity.ProductEntity
 import cl.gymtastic.app.data.local.entity.TrainerEntity
 import cl.gymtastic.app.data.local.entity.UserEntity // Importa UserEntity
 import cl.gymtastic.app.util.ImageUriUtils
-import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest

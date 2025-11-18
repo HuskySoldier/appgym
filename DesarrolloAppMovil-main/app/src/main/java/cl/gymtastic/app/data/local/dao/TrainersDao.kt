@@ -10,6 +10,10 @@ interface TrainersDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(list: List<TrainerEntity>)
 
+    // --- NUEVO: Limpiar todo (para sincronización) ---
+    @Query("DELETE FROM trainers")
+    suspend fun clearAll()
+
     @Query("SELECT * FROM trainers")
     fun observeAll(): Flow<List<TrainerEntity>>
 

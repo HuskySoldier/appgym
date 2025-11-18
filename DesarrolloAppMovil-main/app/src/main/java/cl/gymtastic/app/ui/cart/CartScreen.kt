@@ -21,7 +21,6 @@ import androidx.navigation.NavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cl.gymtastic.app.data.local.entity.CartItemEntity
 import cl.gymtastic.app.ui.navigation.Screen
-import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.*

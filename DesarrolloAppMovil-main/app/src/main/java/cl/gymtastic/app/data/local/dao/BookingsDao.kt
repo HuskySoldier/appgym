@@ -9,13 +9,19 @@ interface BookingsDao {
     @Insert
     suspend fun insert(b: BookingEntity): Long
 
-    // --- MODIFICADO: Cambiado userId por userEmail ---
-    //
+    // --- NUEVO: Insertar múltiples (para sincronización) ---
+    @Insert
+    suspend fun insertAll(list: List<BookingEntity>)
+
+    // --- NUEVO: Limpiar por usuario (para sincronización) ---
+    @Query("DELETE FROM bookings WHERE userEmail = :userEmail")
+    suspend fun clearByUser(userEmail: String)
+
     // Observa todas las reservas de un usuario específico, ordenadas por fecha descendente.
     //@param userEmail El email del usuario cuyas reservas se quieren observar.
-    //
     @Query("SELECT * FROM bookings WHERE userEmail = :userEmail ORDER BY fechaHora DESC")
-    fun observeByUserEmail(userEmail: String): Flow<List<BookingEntity>> // <-- Cambiado nombre y parámetro
+    fun observeByUserEmail(userEmail: String): Flow<List<BookingEntity>>
+
     @Update
     suspend fun update(b: BookingEntity)
 

@@ -47,7 +47,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import cl.gymtastic.app.data.repository.AuthRepository // Importa AuthRepository si ViewModel lo necesita
 import cl.gymtastic.app.ui.navigation.NavRoutes // Asegúrate que NavRoutes esté definido
-import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 
 // -----------------------------

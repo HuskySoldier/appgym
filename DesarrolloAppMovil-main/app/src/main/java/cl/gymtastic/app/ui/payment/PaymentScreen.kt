@@ -79,7 +79,8 @@ fun PaymentScreen(
     var showTransferDialog by remember { mutableStateOf(false) }
 
     // Carrito
-    val cartFlow = remember { ServiceLocator.cart(ctx).observeCart() }
+    val cartRepo = remember { ServiceLocator.cart(ctx) } // Obtener CartRepo
+    val cartFlow = remember { cartRepo.observeCart() } // Usar CartRepo para observar
     val items by cartFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val total = items.sumOf { it.qty * it.unitPrice }
 
@@ -326,72 +327,33 @@ fun PaymentScreen(
                                 onClick = {
                                     if (total <= 0 || loading || authEmail.isBlank()) return@Button
                                     loading = true
+                                    showBlocked = null // Limpiar error anterior
                                     scope.launch {
                                         try {
-                                            val merchItems = items.filter { types[it.productId] != "plan" }
-                                            var planActivated: Boolean
+                                            // 1. Llamar al Orquestador de Checkout
+                                            val (planActivated, message) = cartRepo.processCheckout(
+                                                userEmail = authEmail,
+                                                items = items,
+                                                sede = if (hasPlanInCart) sede else null
+                                            )
 
-                                            if (hasPlanInCart) {
-                                                if (!canBuy) {
-                                                    val endMillis = userEntity?.planEndMillis
-                                                    val remainingDaysMsg = endMillis?.let { end ->
-                                                        val diff = end - System.currentTimeMillis()
-                                                        if (diff <= 0) 0 else TimeUnit.MILLISECONDS.toDays(diff)
-                                                    }?.let { "Restan $it día(s)." } ?: ""
-                                                    showBlocked = "Ya tienes un plan activo. Podrás contratar uno nuevo cuando falten $thresholdDays días o menos para que termine. $remainingDaysMsg"
-                                                    return@launch
-                                                }
-
-                                                if (merchItems.isNotEmpty()) {
-                                                    productsRepo.reserveAndDecrementMerchStock(merchItems, typesById = types)
-                                                }
-
-                                                val s = sede ?: run {
-                                                    showBlocked = "Selecciona una sede para asociar tu plan."
-                                                    return@launch
-                                                }
-                                                val planEnd = daysFromNow(30)
-                                                usersDao.updateSubscription(
-                                                    email = authEmail,
-                                                    planEndMillis = planEnd,
-                                                    sedeId = safeIndex, // Assuming index maps to ID, adjust if needed
-                                                    sedeName = s.nombre,
-                                                    sedeLat = s.lat,
-                                                    sedeLng = s.lng
-                                                )
-                                                planActivated = true
-
-                                            } else { // Solo MERCH
-                                                if (merchItems.isNotEmpty()) {
-                                                    productsRepo.reserveAndDecrementMerchStock(merchItems, typesById = types)
-                                                }
-                                                planActivated = false
-                                            }
-
-                                            ServiceLocator.cart(ctx).clear()
+                                            // 2. Éxito: Navegar
                                             nav.navigate(Screen.PaymentSuccess.withPlan(planActivated)) {
                                                 launchSingleTop = true
                                                 popUpTo(Screen.Payment.route) { inclusive = true }
                                             }
 
-                                        } catch (e: InsufficientStockException) {
-                                            val msg = buildString {
-                                                append("Stock insuficiente en:\n")
-                                                e.shortages.forEach { (pid, req) ->
-                                                    // Need to convert pid (Long) back if names map uses Long keys
-                                                    val nombre = names[pid] ?: "Producto #$pid"
-                                                    append("• $nombre × $req\n")
-                                                }
-                                            }
-                                            showBlocked = msg.trim()
+                                        } catch (e: IOException) {
+                                            // Captura errores de stock, plan activo, o conexión
+                                            showBlocked = e.message
                                         } catch (e: Exception) {
-                                            showBlocked = "Ocurrió un error inesperado: ${e.message}"
+                                            showBlocked = "Ocurrió un error inesperado: ${e.message ?: "desconocido"}"
                                         } finally {
                                             loading = false
                                         }
                                     }
                                 },
-                                enabled = !loading && total > 0 && authEmail.isNotBlank(),
+                                enabled = !loading && total > 0 && authEmail.isNotBlank() && (hasPlanInCart && sede != null || !hasPlanInCart),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 if (loading) {
@@ -459,4 +421,3 @@ private fun TransferInfoDialog(onDismiss: () -> Unit) {
         }
     )
 }
-

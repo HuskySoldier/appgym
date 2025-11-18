@@ -25,7 +25,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import cl.gymtastic.app.data.local.entity.ProductEntity
 import cl.gymtastic.app.ui.navigation.Screen
-import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage // <-- IMPORTACIÓN AÑADIDA
 import coil.compose.SubcomposeAsyncImageContent // <-- IMPORTACIÓN AÑADIDA
 import coil.request.ImageRequest // <-- IMPORTACIÓN AÑADIDA

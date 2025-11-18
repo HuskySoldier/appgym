@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- ================== Configuración de la Aplicación ================== -->
     <!-- Define propiedades globales de la aplicación. -->
@@ -20,7 +21,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.GymTastic">
+        android:theme="@style/Theme.GymTastic"
+        android:usesCleartextTraffic="true">
 
         <!-- API Key de Google Maps. Obligatoria para usar los servicios de Google Maps (como el mapa en PaymentScreen). -->
          <!-- se recomienda no guardar la api key directamente aqui -->

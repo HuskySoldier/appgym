@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import cl.gymtastic.app.data.local.entity.AttendanceEntity
 import cl.gymtastic.app.ui.navigation.NavRoutes
-import cl.gymtastic.app.util.ServiceLocator
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cl.gymtastic.app.data.local.db.GymTasticDatabase
 import cl.gymtastic.app.data.local.entity.UserEntity

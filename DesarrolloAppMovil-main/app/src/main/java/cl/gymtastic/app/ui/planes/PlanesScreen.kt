@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.flowOf
 // ---
 import cl.gymtastic.app.data.local.entity.ProductEntity
 import cl.gymtastic.app.ui.navigation.Screen
-import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 

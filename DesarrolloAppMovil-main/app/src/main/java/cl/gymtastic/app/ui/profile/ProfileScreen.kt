@@ -47,7 +47,6 @@ import cl.gymtastic.app.R
 import cl.gymtastic.app.data.local.db.GymTasticDatabase // <-- Importar DB
 import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.util.ImageUriUtils
-import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.Dispatchers // <-- Importar Dispatchers
 import kotlinx.coroutines.flow.flowOf // <-- Importar flowOf
 import kotlinx.coroutines.launch

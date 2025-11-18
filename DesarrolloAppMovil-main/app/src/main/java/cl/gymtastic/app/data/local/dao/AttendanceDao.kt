@@ -11,10 +11,18 @@ interface AttendanceDao {
 
 
     //el DAO es la capa que traduce las peticiones del Repository en acciones concretas sobre la base de datos
-     //Inserta un nuevo registro de asistencia.
+    //Inserta un nuevo registro de asistencia.
 
     @Insert
     suspend fun insert(reg: AttendanceEntity): Long
+
+    // --- NUEVO: Insertar múltiples (para sincronización) ---
+    @Insert
+    suspend fun insertAll(regs: List<AttendanceEntity>)
+
+    // --- NUEVO: Eliminar todos los registros de un usuario (para sincronización) ---
+    @Query("DELETE FROM attendance WHERE userEmail = :userEmail")
+    suspend fun clearByUser(userEmail: String)
 
 
     //* Observa (Flow) todos los registros de asistencia para un usuario específico,
