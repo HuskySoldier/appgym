@@ -7,33 +7,42 @@ import retrofit2.Response
 import retrofit2.http.*
 
 // ====================================================================
-// 1. DTOs (Data Transfer Objects) de la Aplicación
-//    Deben coincidir con los DTOs y Entities de tu backend Spring Boot
+// 1. DTOs (Data Transfer Objects)
 // ====================================================================
 
-// DTO para Login (Request)
+// --- Auth & Users ---
+
 data class LoginRequest(
     val email: String,
     val password: String
 )
 
-// DTO para Login (Response) - Coincide con LoginResponse.java de loginservice
 data class LoginResponse(
     val success: Boolean,
     val token: String?,
     val message: String?,
-    val user: UserProfileDto? // Perfil sin el passHash
+    val user: UserProfileDto?
 )
 
-// DTO para Registro (Request) - Coincide con RegisterRequest.java de registerservice
 data class RegisterRequest(
     val email: String,
     val password: String,
-    val nombre: String // Coincide con 'nombre' en el backend
+    val nombre: String
 )
 
-// DTO para el perfil de usuario (sin passHash)
-// Coincide con UserProfileResponse.java de user-service
+// Nuevo DTO para confirmar reseteo de contraseña
+data class ResetPasswordRequestDto(
+    val email: String,
+    val token: String,
+    val newPassword: String
+)
+
+// Nuevo DTO para que el Admin cambie roles
+data class AdminRoleUpdateRequest(
+    val rol: String
+)
+
+// DTO para perfil (lectura)
 data class UserProfileDto(
     val email: String,
     val nombre: String,
@@ -48,19 +57,20 @@ data class UserProfileDto(
     val bio: String? = null
 )
 
-// DTO para actualizar el perfil
+// DTO para que el usuario actualice su propio perfil
 data class ProfileUpdateRequest(
     val nombre: String,
     val fono: String?,
     val bio: String?,
-    val avatarUri: String? // Nota: solo usamos esto para guardar la URI local
+    val avatarUri: String?
 )
 
-// DTO para decrementar stock (checkoutservice -> product-service)
+// --- Shop & Checkout ---
+
 data class CartItemDto(
     val productId: Int,
     val qty: Int,
-    val tipo: String // Necesario para la lógica del CheckoutService
+    val tipo: String
 )
 
 data class StockDecreaseRequest(
@@ -70,7 +80,7 @@ data class StockDecreaseRequest(
 data class CheckoutRequest(
     val userEmail: String,
     val items: List<CartItemDto>,
-    val sede: Sede? // Usaremos la clase Sede local si es necesaria
+    val sede: Sede?
 )
 
 data class SubscriptionUpdateRequest(
@@ -81,8 +91,8 @@ data class SubscriptionUpdateRequest(
     val sedeLng: Double?
 )
 
-// DTO para Check-in/Check-out (solo se usa en la App temporalmente para el history,
-// pero la API solo necesita el email)
+// --- Attendance ---
+
 data class AttendanceHistoryResponse(
     val id: Long,
     val userEmail: String,
@@ -90,13 +100,10 @@ data class AttendanceHistoryResponse(
     val checkOutTimestamp: Long?
 )
 
+// --- Bookings ---
+
 data class BookingRequest(
     val userEmail: String,
     val trainerId: Long,
     val fechaHora: Long
 )
-
-
-// ====================================================================
-// 2. Interfaz API (Retrofit)
-// ====================================================================

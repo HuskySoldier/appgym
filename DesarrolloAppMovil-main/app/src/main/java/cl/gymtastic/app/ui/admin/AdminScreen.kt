@@ -34,7 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role // Required for Radio Button Row accessibility
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -44,11 +44,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import cl.gymtastic.app.data.local.db.GymTasticDatabase // Importa la DB
+import cl.gymtastic.app.data.local.db.GymTasticDatabase
 import cl.gymtastic.app.data.local.entity.ProductEntity
 import cl.gymtastic.app.data.local.entity.TrainerEntity
-import cl.gymtastic.app.data.local.entity.UserEntity // Importa UserEntity
+import cl.gymtastic.app.data.local.entity.UserEntity
 import cl.gymtastic.app.util.ImageUriUtils
+import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
@@ -127,6 +128,7 @@ fun AdminProductsTab() {
     val scope = rememberCoroutineScope()
     val repo = remember { ServiceLocator.products(ctx) }
     val money = remember { NumberFormat.getCurrencyInstance(Locale("es", "CL")).apply { maximumFractionDigits = 0 } }
+    // Observamos DB local, que se actualiza al guardar/borrar en API
     val merch by repo.observeMerch().collectAsStateWithLifecycle(initialValue = emptyList())
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<ProductEntity?>(null) }
@@ -164,11 +166,18 @@ fun AdminProductsTab() {
             onDismiss = { showEditDialog = false },
             onSave = { productToSave, oldImageUri ->
                 scope.launch {
-                    if (oldImageUri != productToSave.img) {
-                        withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldImageUri) }
+                    try {
+                        // Guardar en API + DB
+                        repo.save(productToSave)
+                        // Si cambia la imagen y es local, borrar la vieja
+                        if (oldImageUri != null && oldImageUri != productToSave.img) {
+                            withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldImageUri) }
+                        }
+                        showEditDialog = false
+                        Toast.makeText(ctx, "Producto guardado", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(ctx, "Error al guardar: ${e.message}", Toast.LENGTH_LONG).show()
                     }
-                    repo.save(productToSave)
-                    showEditDialog = false
                 }
             }
         )
@@ -180,8 +189,13 @@ fun AdminProductsTab() {
             onDismiss = { showDeleteDialog = null },
             onConfirm = {
                 scope.launch {
-                    withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(productToDelete.img) }
-                    repo.delete(productToDelete)
+                    try {
+                        repo.delete(productToDelete)
+                        withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(productToDelete.img) }
+                        Toast.makeText(ctx, "Producto eliminado", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(ctx, "Error al eliminar: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                     showDeleteDialog = null
                 }
             }
@@ -322,11 +336,16 @@ fun AdminTrainersTab() {
             onDismiss = { showEditDialog = false },
             onSave = { trainerToSave, oldImageUri ->
                 scope.launch {
-                    if (oldImageUri != trainerToSave.img) {
-                        withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldImageUri) }
+                    try {
+                        repo.save(trainerToSave)
+                        if (oldImageUri != null && oldImageUri != trainerToSave.img) {
+                            withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldImageUri) }
+                        }
+                        showEditDialog = false
+                        Toast.makeText(ctx, "Trainer guardado", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(ctx, "Error al guardar: ${e.message}", Toast.LENGTH_LONG).show()
                     }
-                    repo.save(trainerToSave)
-                    showEditDialog = false
                 }
             }
         )
@@ -338,8 +357,13 @@ fun AdminTrainersTab() {
             onDismiss = { showDeleteDialog = null },
             onConfirm = {
                 scope.launch {
-                    withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(trainerToDelete.img) }
-                    repo.delete(trainerToDelete)
+                    try {
+                        repo.delete(trainerToDelete)
+                        withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(trainerToDelete.img) }
+                        Toast.makeText(ctx, "Trainer eliminado", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(ctx, "Error al eliminar: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                     showDeleteDialog = null
                 }
             }
@@ -438,30 +462,32 @@ fun TrainerEditDialog(trainer: TrainerEntity?, onDismiss: () -> Unit, onSave: (T
 }
 
 
-// --- Pestaña de Usuarios (NUEVA) ---
+// --- Pestaña de Usuarios (ACTUALIZADA) ---
 
 @Composable
 fun AdminUsersTab() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val usersDao = remember { GymTasticDatabase.get(ctx).users() }
-    val authRepo = remember { ServiceLocator.auth(ctx) } // Para hashing
+    val authRepo = remember { ServiceLocator.auth(ctx) }
     val authPrefs = remember { authRepo.prefs() }
 
-    // Email del admin actual (para excluirlo y no auto-eliminarse)
     val adminEmail by authPrefs.userEmailFlow.collectAsStateWithLifecycle("")
 
-    // --- Estado ---
+    // Sincronizar usuarios al entrar a la pestaña
+    LaunchedEffect(Unit) {
+        authRepo.syncAllUsers()
+    }
+
     val users by remember(adminEmail) {
         if (adminEmail.isNotBlank()) {
             usersDao.observeAllExcept(adminEmail)
         } else {
-            flowOf(emptyList()) // No mostrar nada si no se sabe quién es el admin
+            flowOf(emptyList())
         }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     var showAddDialog by remember { mutableStateOf(false) }
-    var showResetPassDialog by remember { mutableStateOf<UserEntity?>(null) }
     var showDeleteDialog by remember { mutableStateOf<UserEntity?>(null) }
 
     // --- UI ---
@@ -483,7 +509,6 @@ fun AdminUsersTab() {
             items(users, key = { it.email }) { user ->
                 UserAdminCard(
                     user = user,
-                    onResetPassword = { showResetPassDialog = user },
                     onDelete = { showDeleteDialog = user }
                 )
             }
@@ -494,22 +519,20 @@ fun AdminUsersTab() {
     if (showAddDialog) {
         UserAddDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { email, name, password, rol -> // <-- Recibe el rol
+            onAdd = { email, name, password, rol ->
                 scope.launch {
                     val normalizedEmail = email.trim().lowercase()
                     val normalizedName = name.trim()
                     // Usamos AuthRepository para registrar (maneja hashing y chequeo de existencia)
-                    val registerSuccess = authRepo.register(normalizedEmail, password, normalizedName) // Rol por defecto 'user'
+                    val registerSuccess = authRepo.register(normalizedEmail, password, normalizedName)
                     if (registerSuccess) {
                         // Si el rol elegido es diferente al por defecto ('user'), actualizamos
                         if (rol != "user") {
-                            // --- añadi updateUserRole a UsersDao ---
-                            val updatedRows = usersDao.updateUserRole(normalizedEmail, rol)
-                            if (updatedRows > 0) {
+                            val roleUpdated = authRepo.updateRole(normalizedEmail, rol)
+                            if (roleUpdated) {
                                 Toast.makeText(ctx, "Usuario $normalizedEmail creado con rol $rol", Toast.LENGTH_SHORT).show()
                             } else {
-                                // Esto podría pasar si el registro fue exitoso pero la actualización falló (raro)
-                                Toast.makeText(ctx, "Usuario $normalizedEmail creado (rol por defecto), error al asignar rol $rol", Toast.LENGTH_LONG).show()
+                                Toast.makeText(ctx, "Usuario creado, error al asignar rol", Toast.LENGTH_LONG).show()
                             }
                         } else {
                             Toast.makeText(ctx, "Usuario $normalizedEmail creado", Toast.LENGTH_SHORT).show()
@@ -517,28 +540,7 @@ fun AdminUsersTab() {
                         showAddDialog = false
                     } else {
                         Toast.makeText(ctx, "El email $normalizedEmail ya existe", Toast.LENGTH_SHORT).show()
-                        // Mantenemos el diálogo abierto
                     }
-                }
-            }
-        )
-    }
-
-    // --- Diálogo Resetear Contraseña ---
-    showResetPassDialog?.let { userToReset ->
-        UserResetPasswordDialog(
-            user = userToReset,
-            onDismiss = { showResetPassDialog = null },
-            onConfirm = { newPassword ->
-                scope.launch {
-                    val newHash = authRepo.hashPassword(newPassword)
-                    val updatedRows = usersDao.updatePasswordHash(userToReset.email, newHash)
-                    if (updatedRows > 0) {
-                        Toast.makeText(ctx, "Contraseña de ${userToReset.email} actualizada", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(ctx, "Error al actualizar contraseña", Toast.LENGTH_SHORT).show()
-                    }
-                    showResetPassDialog = null
                 }
             }
         )
@@ -551,8 +553,9 @@ fun AdminUsersTab() {
             onDismiss = { showDeleteDialog = null },
             onConfirm = {
                 scope.launch {
-                    val deletedRows = usersDao.deleteByEmail(userToDelete.email)
-                    if (deletedRows > 0) {
+                    // Usamos AuthRepo para eliminar en API y Local
+                    val success = authRepo.deleteUser(userToDelete.email)
+                    if (success) {
                         Toast.makeText(ctx, "Usuario ${userToDelete.email} eliminado", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(ctx, "Error al eliminar usuario", Toast.LENGTH_SHORT).show()
@@ -567,7 +570,6 @@ fun AdminUsersTab() {
 @Composable
 fun UserAdminCard(
     user: UserEntity,
-    onResetPassword: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -582,30 +584,29 @@ fun UserAdminCard(
             Column(Modifier.weight(1f)) {
                 Text(user.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(user.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                // Mostrar el rol para que el admin lo vea
+                // Mostrar el rol
                 Text("Rol: ${user.rol}", style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = onResetPassword) { Icon(Icons.Default.LockReset, "Resetear Contraseña", tint = MaterialTheme.colorScheme.secondary) }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Eliminar Usuario", tint = MaterialTheme.colorScheme.error) }
         }
     }
 }
 
-// --- Diálogo Añadir Usuario (MODIFICADO) ---
+// --- Diálogo Añadir Usuario (MODIFICADO con Roles) ---
 @SuppressLint("UnrememberedMutableState")
 @Composable
 fun UserAddDialog(
     onDismiss: () -> Unit,
-    onAdd: (email: String, name: String, password: String, rol: String) -> Unit // <-- Añadido rol
+    onAdd: (email: String, name: String, password: String, rol: String) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    // --- NUEVO: Estado para seleccionar rol ---
-    val roles = listOf("user", "admin") // Opciones de roles
-    var selectedRol by remember { mutableStateOf(roles[0]) } // Por defecto 'user'
-    // --- FIN NUEVO ---
+
+    // Estado para seleccionar rol
+    val roles = listOf("user", "admin")
+    var selectedRol by remember { mutableStateOf(roles[0]) }
 
     val isFormValid by derivedStateOf {
         email.contains("@") && name.isNotBlank() && password.length >= 6
@@ -622,19 +623,18 @@ fun UserAddDialog(
                     value = password, onValueChange = { password = it }, label = { Text("Contraseña Inicial") },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { if(isFormValid) onAdd(email, name, password, selectedRol) }), // <-- Pasa selectedRol
+                    keyboardActions = KeyboardActions(onDone = { if(isFormValid) onAdd(email, name, password, selectedRol) }),
                     trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) { Icon(if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null) } },
                     singleLine = true, supportingText = { Text("Mínimo 6 caracteres") }
                 )
 
-                // --- NUEVO: Selección de Rol con Radio Buttons ---
                 Spacer(Modifier.height(8.dp))
                 Text("Rol:", style = MaterialTheme.typography.labelMedium)
                 Row(Modifier.fillMaxWidth()) {
                     roles.forEach { rolOption ->
                         Row(
                             Modifier
-                                .weight(1f) // Ocupa espacio equitativo
+                                .weight(1f)
                                 .selectable(
                                     selected = (rolOption == selectedRol),
                                     onClick = { selectedRol = rolOption },
@@ -645,22 +645,21 @@ fun UserAddDialog(
                         ) {
                             RadioButton(
                                 selected = (rolOption == selectedRol),
-                                onClick = null // onClick ya está en Row
+                                onClick = null
                             )
                             Text(
-                                text = rolOption.replaceFirstChar { it.titlecase(Locale.getDefault()) }, // Capitalizar ("User", "Admin")
+                                text = rolOption.replaceFirstChar { it.titlecase(Locale.getDefault()) },
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(start = 4.dp)
                             )
                         }
                     }
                 }
-                // --- FIN NUEVO ---
             }
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(email.trim().lowercase(), name.trim(), password, selectedRol) }, // <-- Pasa selectedRol
+                onClick = { onAdd(email.trim().lowercase(), name.trim(), password, selectedRol) },
                 enabled = isFormValid
             ) { Text("Crear") }
         },
@@ -670,54 +669,9 @@ fun UserAddDialog(
     )
 }
 
-// --- Diálogo Resetear Contraseña (Sin cambios) ---
-@SuppressLint("UnrememberedMutableState")
-@Composable
-fun UserResetPasswordDialog(user: UserEntity, onDismiss: () -> Unit, onConfirm: (newPassword: String) -> Unit) {
-    /* ... Código sin cambios ... */
-    var newPassword by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    val isValid by derivedStateOf { newPassword.length >= 6 }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Resetear Contraseña") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Usuario: ${user.email}")
-                OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it },
-                    label = { Text("Nueva Contraseña") },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { if(isValid) onConfirm(newPassword) }),
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null)
-                        }
-                    },
-                    singleLine = true,
-                    supportingText = { Text("Mínimo 6 caracteres") }
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(newPassword) },
-                enabled = isValid
-            ) { Text("Actualizar") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
-        }
-    )
-}
-
-// --- Diálogo Genérico de Confirmación (Sin cambios) ---
+// --- Diálogo Genérico de Confirmación ---
 @Composable
 fun DeleteConfirmDialog(itemName: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    /* ... Código sin cambios ... */
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Confirmar Eliminación") },
@@ -737,5 +691,3 @@ fun DeleteConfirmDialog(itemName: String, onDismiss: () -> Unit, onConfirm: () -
         }
     )
 }
-
-

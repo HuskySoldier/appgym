@@ -26,6 +26,7 @@ sealed class Screen(val route: String) {
     data object Profile  : Screen("profile")
 
     data object Admin : Screen("admin")
+    data object ForgotPassword : Screen("forgot_password")
 
 
     // payment_success con query opcional ?plan=
@@ -214,6 +215,15 @@ fun NavGraph(
             cl.gymtastic.app.ui.admin.AdminScreen(navController, windowSizeClass)
 
 
+        }
+        composable(
+            route = Screen.ForgotPassword.route,
+            enterTransition = { enterRight() },
+            exitTransition = { exitLeft() },
+            popEnterTransition = { enterLeft() },
+            popExitTransition = { exitRight() }
+        ) {
+            cl.gymtastic.app.ui.auth.ForgotPasswordScreen(navController)
         }
     }
 

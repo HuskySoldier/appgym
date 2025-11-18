@@ -12,7 +12,7 @@ import retrofit2.HttpException
 class TrainersRepository(context: Context) {
     private val db = GymTasticDatabase.get(context)
     private val dao = db.trainers()
-    private val api = ServiceLocator.api() // <-- Obtener la API
+    private val api = ServiceLocator.api()
 
     // Función para refrescar los datos desde la API
     suspend fun refreshTrainersFromApi() {
@@ -24,8 +24,7 @@ class TrainersRepository(context: Context) {
                 Log.d("TrainersRepo", "API OK. Trainers recibidos: ${newTrainers.size}")
 
                 db.withTransaction {
-                    // Borramos y reemplazamos todos los trainers para tener la lista fresca
-                    // (Esto es simple, pero asume que TrainerEntity.id de la API es la fuente de verdad)
+                    // dao.clearAll()
                     dao.insertAll(newTrainers)
                     Log.d("TrainersRepo", "Trainers actualizados en Room.")
                 }
@@ -42,21 +41,40 @@ class TrainersRepository(context: Context) {
     // El flujo sigue leyendo desde Room (Cache-First)
     fun observeAll() = dao.observeAll()
 
-    // --- Funciones de Admin (Guardar/Eliminar, ahora solo usan Room, pero el admin real es el backend) ---
-
-    /** Guarda (inserta o actualiza) un trainer. */
+    // --- ADMIN: Guardar Trainer ---
     suspend fun save(trainer: TrainerEntity) {
-        // En un escenario real, llamarías a la API POST/PUT aquí.
-        // ** NOTA: DEBES IMPLEMENTAR LA LLAMADA PUT/POST EN EL BACKEND REAL (trainersservice:8085)
-        // Por ahora, solo guardamos localmente
-        dao.save(trainer)
+        try {
+            val response = if (trainer.id == 0L) {
+                api.createTrainer(trainer)
+            } else {
+                api.updateTrainer(trainer.id, trainer)
+            }
+
+            if (response.isSuccessful && response.body() != null) {
+                dao.save(response.body()!!)
+                Log.d("TrainersRepo", "Trainer guardado en backend y local")
+            } else {
+                throw Exception("Error al guardar trainer: ${response.code()}")
+            }
+        } catch (e: Exception) {
+            Log.e("TrainersRepo", "Excepción guardando trainer", e)
+            throw e
+        }
     }
 
-    /** Elimina un trainer. */
+    // --- ADMIN: Eliminar Trainer ---
     suspend fun delete(trainer: TrainerEntity) {
-        // En un escenario real, llamarías a la API DELETE aquí.
-        // ** NOTA: DEBES IMPLEMENTAR LA LLAMADA DELETE EN EL BACKEND REAL (trainersservice:8085)
-        // Por ahora, solo eliminamos localmente
-        dao.delete(trainer)
+        try {
+            val response = api.deleteTrainer(trainer.id)
+            if (response.isSuccessful) {
+                dao.delete(trainer)
+                Log.d("TrainersRepo", "Trainer eliminado en backend y local")
+            } else {
+                throw Exception("Error al eliminar trainer: ${response.code()}")
+            }
+        } catch (e: Exception) {
+            Log.e("TrainersRepo", "Excepción eliminando trainer", e)
+            throw e
+        }
     }
 }
