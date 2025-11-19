@@ -15,20 +15,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import cl.gymtastic.app.data.model.Trainer // <-- Importar nuevo Modelo
 import cl.gymtastic.app.util.ServiceLocator
 import cl.gymtastic.app.work.BookingReminderWorker
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
-import java.io.IOException // <-- Importar IOException para manejar errores de red
+import java.io.IOException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,9 +46,14 @@ fun BookingScreen(
     val trainersRepo = remember { ServiceLocator.trainers(ctx) }
     val bookingsRepo = remember { ServiceLocator.bookings(ctx) }
 
-    // --- Trainers desde Room (cache) ---
-    val trainersFlow = remember { trainersRepo.observeAll() }
-    val trainers by trainersFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // --- Estado de Datos ---
+    // Reemplazamos el Flow de Room por un estado local cargado desde API
+    var trainers by remember { mutableStateOf<List<Trainer>>(emptyList()) }
+
+    // Cargar Trainers al iniciar
+    LaunchedEffect(Unit) {
+        trainers = trainersRepo.getTrainers()
+    }
 
     // --- Opciones de Fecha y Hora ---
     val dateOptions = remember {
@@ -64,7 +70,7 @@ fun BookingScreen(
     var trainerExpanded by remember { mutableStateOf(false) }
     var dateExpanded by remember { mutableStateOf(false) }
     var timeExpanded by remember { mutableStateOf(false) }
-    var selectedTrainerIndex by remember { mutableStateOf(0) } // Inicializa en 0
+    var selectedTrainerIndex by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
 
     // --- Obtener userEmail ---
@@ -78,20 +84,16 @@ fun BookingScreen(
     val isCompact = widthSizeClass == WindowWidthSizeClass.Compact
     val cardModifier = if (isCompact) Modifier.fillMaxWidth(0.95f) else Modifier.width(550.dp)
 
-    // --- CORRECCIÓN: Calcular índice seguro ANTES de usarlo ---
-    // Asegura que el índice esté dentro de los límites válidos, incluso si la lista está vacía (0..-1 se convierte en 0..0)
     val safeTrainerIndex = remember(selectedTrainerIndex, trainers.size) {
         selectedTrainerIndex.coerceIn(0, (trainers.size - 1).coerceAtLeast(0))
     }
-    // --- FIN CORRECCIÓN ---
-
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Agendar Trainer", color = cs.onBackground) },
                 navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) { // Usa popBackStack
+                    IconButton(onClick = { nav.popBackStack() }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = cs.onBackground)
                     }
                 },
@@ -123,17 +125,14 @@ fun BookingScreen(
 
                     // === Trainer Dropdown ===
                     ExposedDropdownMenuBox(expanded = trainerExpanded, onExpandedChange = { trainerExpanded = !trainerExpanded }) {
-                        // --- CORRECCIÓN: Usar safeTrainerIndex y manejar lista vacía ---
                         val trainerLabel = trainers.getOrNull(safeTrainerIndex)?.nombre ?: if (trainers.isEmpty()) "Cargando..." else "Selecciona"
                         TextField(
                             value = trainerLabel, onValueChange = {}, readOnly = true, label = { Text("Entrenador") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = trainerExpanded) },
                             colors = ExposedDropdownMenuDefaults.textFieldColors(),
                             modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            // Deshabilitar si no hay trainers cargados
                             enabled = trainers.isNotEmpty()
                         )
-                        // Mostrar menú solo si hay trainers
                         if (trainers.isNotEmpty()) {
                             ExposedDropdownMenu(expanded = trainerExpanded, onDismissRequest = { trainerExpanded = false }) {
                                 trainers.forEachIndexed { idx, t ->
@@ -186,16 +185,13 @@ fun BookingScreen(
 
                         Button(
                             onClick = {
-                                // --- CORRECCIÓN: Usar safeTrainerIndex aquí también ---
                                 if (trainers.isEmpty() || authEmail.isBlank()) {
                                     scope.launch { snackbar.showSnackbar("Selecciona un entrenador y asegúrate de haber iniciado sesión.") }
                                     return@Button
                                 }
                                 loading = true
 
-                                // Usar el índice seguro que ya calculamos
                                 val selectedTrainer = trainers[safeTrainerIndex]
-                                // --- FIN CORRECCIÓN ---
                                 val selectedDate = dateOptions[selectedDateIndex]
                                 val safeTimeIdx = selectedTimeIndex.coerceIn(timeOptions.indices)
                                 val selectedTime = timeOptions[safeTimeIdx]
@@ -204,14 +200,14 @@ fun BookingScreen(
 
                                 scope.launch {
                                     try {
-                                        // 1. Guardar la reserva (Llamada a la API)
-                                        bookingsRepo.create( // <-- USAR EL REPO MODIFICADO
+                                        // 1. Guardar la reserva (Directo a API)
+                                        bookingsRepo.create(
                                             userEmail = authEmail,
                                             trainerId = selectedTrainer.id,
                                             fechaHora = millis
                                         )
 
-                                        // 2. Programar el Worker
+                                        // 2. Programar el Worker (Recordatorio local)
                                         val workManager = WorkManager.getInstance(ctx.applicationContext)
                                         val now = System.currentTimeMillis()
                                         val oneHourInMillis = TimeUnit.HOURS.toMillis(1)
@@ -225,25 +221,24 @@ fun BookingScreen(
                                             .setInputData(inputData)
                                             .build()
                                         workManager.enqueue(bookingReminderRequest)
-                                        Log.d("BookingScreen", "Booking reminder enqueued for $trainerName at $selectedTime (Delay: ${delay}ms)")
+                                        Log.d("BookingScreen", "Booking reminder enqueued for $trainerName at $selectedTime")
 
-                                        // 3. Mostrar confirmación y volver
+                                        // 3. Feedback
                                         val dateLabel = "%02d/%02d/%d".format(selectedDate.third, (selectedDate.second + 1), selectedDate.first)
-                                        snackbar.showSnackbar("Reserva creada con $trainerName para $selectedTime del $dateLabel. Recordatorio programado.")
+                                        snackbar.showSnackbar("Reserva creada con $trainerName para $selectedTime del $dateLabel")
                                         nav.popBackStack()
 
                                     } catch (e: IOException) {
-                                        Log.e("BookingScreen", "Error de red/servidor al crear reserva", e)
-                                        snackbar.showSnackbar("Error al crear la reserva: ${e.message ?: "desconocido"}")
+                                        Log.e("BookingScreen", "Error red", e)
+                                        snackbar.showSnackbar("Error de conexión: ${e.message}")
                                     } catch (e: Exception) {
-                                        Log.e("BookingScreen", "Error inesperado al crear reserva", e)
-                                        snackbar.showSnackbar("Error al crear la reserva: ${e.message ?: "desconocido"}")
+                                        Log.e("BookingScreen", "Error general", e)
+                                        snackbar.showSnackbar("Error: ${e.message}")
                                     } finally {
                                         loading = false
                                     }
                                 }
                             },
-                            // Deshabilitar si no hay trainers o está cargando
                             enabled = trainers.isNotEmpty() && !loading && authEmail.isNotBlank(),
                             modifier = Modifier.weight(1f)
                         ) {

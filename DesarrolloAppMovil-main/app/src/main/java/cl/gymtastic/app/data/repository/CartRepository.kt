@@ -2,41 +2,67 @@ package cl.gymtastic.app.data.repository
 
 import android.content.Context
 import android.util.Log
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import cl.gymtastic.app.data.local.entity.CartItemEntity
 import cl.gymtastic.app.data.local.Sede
+import cl.gymtastic.app.data.model.CartItem // <-- Usamos el nuevo modelo
 import cl.gymtastic.app.data.remote.CartItemDto
 import cl.gymtastic.app.data.remote.CheckoutRequest
 import cl.gymtastic.app.util.ServiceLocator
-import com.google.gson.Gson // <--- IMPORTAR GSON
+import com.google.gson.Gson
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import retrofit2.HttpException
 import java.io.IOException
 
-// IMPORTANTE: Agregar 'private val' para que context sea accesible en la clase
+// Mantenemos el Singleton para que los datos persistan mientras la app vive
 class CartRepository(private val context: Context) {
-    private val db = GymTasticDatabase.get(context)
     private val api = ServiceLocator.api()
 
-    fun observeCart() = db.cart().observeAll()
+    // --- CARRITO EN MEMORIA (Sustituye a la DB) ---
+    private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
+
+    // Flujo observable para la UI
+    fun observeCart() = _cartItems.asStateFlow()
 
     suspend fun add(productId: Long, qty: Int, unitPrice: Int) {
-        db.cart().upsert(CartItemEntity(productId = productId, qty = qty, unitPrice = unitPrice))
-    }
-    suspend fun clear() = db.cart().clear()
-    suspend fun remove(item: CartItemEntity) = db.cart().delete(item)
-    suspend fun getQtyFor(productId: Long): Int = db.cart().getQtyFor(productId)
-    suspend fun removeByProductIds(ids: List<Long>) {
-        if (ids.isNotEmpty()) db.cart().removeByProductIds(ids)
+        _cartItems.update { currentList ->
+            // Verificar si ya existe para sumar cantidad
+            val existing = currentList.find { it.productId == productId }
+            if (existing != null) {
+                currentList.map {
+                    if (it.productId == productId) it.copy(qty = it.qty + qty) else it
+                }
+            } else {
+                currentList + CartItem(productId = productId, qty = qty, unitPrice = unitPrice)
+            }
+        }
     }
 
+    suspend fun clear() {
+        _cartItems.value = emptyList()
+    }
+
+    suspend fun remove(item: CartItem) {
+        _cartItems.update { list -> list.filter { it.id != item.id } }
+    }
+
+    suspend fun getQtyFor(productId: Long): Int {
+        return _cartItems.value.find { it.productId == productId }?.qty ?: 0
+    }
+
+    suspend fun removeByProductIds(ids: List<Long>) {
+        _cartItems.update { list -> list.filter { it.productId !in ids } }
+    }
+
+    // --- PROCESO DE CHECKOUT (Igual que antes, pero sin DB) ---
     suspend fun processCheckout(
         userEmail: String,
-        items: List<CartItemEntity>,
+        items: List<CartItem>,
         sede: Sede?
     ): Pair<Boolean, String> {
         if (userEmail.isBlank()) throw IOException("Email de usuario no disponible.")
 
-        // Ahora 'context' es accesible gracias a 'private val' en el constructor
+        // Obtener tipos (plan/merch) desde la API
         val types = ServiceLocator.products(context).getTypesById(items.map { it.productId })
 
         val cartItemsDto = items.map { item ->
@@ -53,8 +79,6 @@ class CartRepository(private val context: Context) {
             sede = if (sede != null && cartItemsDto.any { it.tipo == "plan" }) sede else null
         )
 
-        Log.d("CartRepo", "Iniciando Checkout para $userEmail con ${cartItemsDto.size} items.")
-
         try {
             val response = api.processCheckout(request)
             val body = response.body()
@@ -62,25 +86,28 @@ class CartRepository(private val context: Context) {
             if (response.isSuccessful && body != null) {
                 val planActivated = body["planActivated"] as? Boolean ?: false
                 val message = body["message"] as? String ?: "Compra procesada exitosamente."
-                clear()
+
+                clear() // Limpiar carrito en memoria
+
+                // Refrescar usuario si compró plan
+                if (planActivated) {
+                    ServiceLocator.auth(context).getUserProfile(userEmail)
+                    // Nota: getUserProfile en AuthRepository ahora solo devuelve datos,
+                    // asegúrate de que tu HomeScreen recargue al volver.
+                }
                 return Pair(planActivated, message)
             } else {
-                val errorMessage = response.errorBody()?.string() ?: "Error de conexión/servidor (${response.code()})"
-
+                val errorMsg = response.errorBody()?.string() ?: "Error ${response.code()}"
                 if (response.code() == 409) {
-                    // CORRECCIÓN: Crear instancia de Gson directamente
-                    val errorMap = Gson().fromJson(errorMessage, Map::class.java)
-                    val msg = errorMap["message"] as? String ?: errorMessage
-                    throw IOException(msg)
+                    try {
+                        val map = Gson().fromJson(errorMsg, Map::class.java)
+                        throw IOException(map["message"] as? String ?: errorMsg)
+                    } catch (e: Exception) { throw IOException(errorMsg) }
                 }
-                throw IOException(errorMessage)
+                throw IOException(errorMsg)
             }
         } catch (e: HttpException) {
-            Log.e("CartRepo", "Error HTTP/conexión en checkout", e)
-            throw IOException("Error de conexión con el servidor de pago. Intenta más tarde.")
-        } catch (e: Exception) {
-            Log.e("CartRepo", "Error inesperado en checkout", e)
-            throw e
+            throw IOException("Error de conexión.")
         }
     }
 }

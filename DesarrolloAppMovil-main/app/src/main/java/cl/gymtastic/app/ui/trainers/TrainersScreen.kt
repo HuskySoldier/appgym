@@ -21,17 +21,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.layout.ContentScale // <-- Importado
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import cl.gymtastic.app.data.local.entity.TrainerEntity
+import cl.gymtastic.app.data.model.Trainer // <-- CAMBIO: Usar el modelo
 import cl.gymtastic.app.ui.navigation.Screen
-import coil.compose.SubcomposeAsyncImage // <-- Importado
-import coil.compose.SubcomposeAsyncImageContent // <-- Importado
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import cl.gymtastic.app.util.ServiceLocator
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,8 +41,16 @@ fun TrainersScreen(
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    val flow = remember { ServiceLocator.trainers(ctx).observeAll() }
-    val list: List<TrainerEntity> by flow.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Repositorio
+    val trainersRepo = remember { ServiceLocator.trainers(ctx) }
+
+    // --- 1. Cargar Trainers desde API (Backend-Only) ---
+    // Usamos produceState en lugar de collectAsStateWithLifecycle sobre un Flow de Room
+    val list by produceState<List<Trainer>>(initialValue = emptyList()) {
+        value = trainersRepo.getTrainers()
+    }
+    // ---------------------------------------------------
 
     val bg = Brush.verticalGradient(listOf(cs.primary.copy(alpha = 0.22f), cs.surface))
 
@@ -87,10 +94,10 @@ fun TrainersScreen(
                 .fillMaxSize()
                 .background(bg)
                 .padding(padding),
-            contentAlignment = boxAlignment // <-- CENTRAMOS EL CONTENIDO
+            contentAlignment = boxAlignment
         ) {
             Column(
-                modifier = contentModifier // <-- APLICAMOS MODIFICADOR
+                modifier = contentModifier
             ) {
                 Text(
                     "Conoce a nuestro equipo",
@@ -99,25 +106,31 @@ fun TrainersScreen(
                 )
                 Spacer(Modifier.height(12.dp))
 
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(list.size) { i ->
-                        val t = list[i]
-                        TrainerCard(
-                            trainer = t,
-                            onCall = {
-                                safeStart(ctx, Intent(Intent.ACTION_DIAL, Uri.parse("tel:${t.fono}")))
-                            },
-                            onEmail = {
-                                safeStart(ctx, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${t.email}")))
-                            },
-                            onBook = {
-                                // Asumiendo que TrainerEntity.id es Int
-                                nav.navigate(Screen.Booking.routeWith(t.id.toLong()))
-                            }
-                        )
+                if (list.isEmpty()) {
+                    // Estado de carga o vacío
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(list.size) { i ->
+                            val t = list[i]
+                            TrainerCard(
+                                trainer = t,
+                                onCall = {
+                                    safeStart(ctx, Intent(Intent.ACTION_DIAL, Uri.parse("tel:${t.fono}")))
+                                },
+                                onEmail = {
+                                    safeStart(ctx, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${t.email}")))
+                                },
+                                onBook = {
+                                    nav.navigate(Screen.Booking.routeWith(t.id))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -127,7 +140,7 @@ fun TrainersScreen(
 
 @Composable
 private fun TrainerCard(
-    trainer: TrainerEntity,
+    trainer: Trainer, // <-- CAMBIO: Usar el modelo
     onCall: () -> Unit,
     onEmail: () -> Unit,
     onBook: () -> Unit
@@ -142,9 +155,8 @@ private fun TrainerCard(
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
 
-                // --- ️ CAMBIO: Mostrar imagen o fallback a iniciales ---
                 SubcomposeAsyncImage(
-                    model = trainer.img, // Carga la URI (String)
+                    model = trainer.img,
                     contentDescription = trainer.nombre,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -154,11 +166,10 @@ private fun TrainerCard(
                     loading = {
                         CircularProgressIndicator(
                             strokeWidth = 2.dp,
-                            modifier = Modifier.padding(16.dp) // Más pequeño
+                            modifier = Modifier.padding(16.dp)
                         )
                     },
                     error = {
-                        // Fallback a las iniciales si la imagen es nula o falla
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -170,9 +181,8 @@ private fun TrainerCard(
                             )
                         }
                     },
-                    success = { SubcomposeAsyncImageContent() } // Muestra la imagen
+                    success = { SubcomposeAsyncImageContent() }
                 )
-                // --- Fin del cambio ---
 
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -240,7 +250,7 @@ private fun initialsFor(name: String): String {
     val parts = name.trim().split(Regex("\\s+"))
     return when {
         parts.size >= 2 -> "${parts[0].firstOrNull() ?: ' '}${parts[1].firstOrNull() ?: ' '}".uppercase()
-        parts.isNotEmpty() -> "${parts[0].firstOrNull() ?: 'G'}".uppercase() // Fallback a G
+        parts.isNotEmpty() -> "${parts[0].firstOrNull() ?: 'G'}".uppercase()
         else -> "G"
     }
 }
@@ -249,6 +259,5 @@ private fun safeStart(ctx: android.content.Context, intent: Intent) {
     try {
         ctx.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        // Silencioso: no hay app que atienda el intent
     }
 }

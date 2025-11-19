@@ -39,20 +39,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import cl.gymtastic.app.R
+import cl.gymtastic.app.data.model.User // <-- Usamos el Modelo
+import cl.gymtastic.app.data.remote.ProfileUpdateRequest // <-- DTO para actualizar
+import cl.gymtastic.app.ui.navigation.NavRoutes
+import cl.gymtastic.app.util.ImageUriUtils
+import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
-import cl.gymtastic.app.R
-import cl.gymtastic.app.data.local.db.GymTasticDatabase // <-- Importar DB
-import cl.gymtastic.app.ui.navigation.NavRoutes
-import cl.gymtastic.app.util.ImageUriUtils
-import kotlinx.coroutines.Dispatchers // <-- Importar Dispatchers
-import kotlinx.coroutines.flow.flowOf // <-- Importar flowOf
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.withContext // <-- Importar withContext
-import cl.gymtastic.app.util.ServiceLocator
+import kotlinx.coroutines.withContext
 
 @SuppressLint("UnrememberedMutableState")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,41 +65,57 @@ fun ProfileScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // --- Sesión y UserEntity (AHORA fuente única de datos del perfil) ---
-    val session = remember { ServiceLocator.auth(ctx).prefs() }
+    // --- Servicios ---
+    val authRepo = remember { ServiceLocator.auth(ctx) }
+    val api = remember { ServiceLocator.api() } // Para llamar al endpoint updateProfile
+    val session = remember { authRepo.prefs() }
+
     val authEmail by session.userEmailFlow.collectAsStateWithLifecycle(initialValue = "")
-    val usersDao = remember { GymTasticDatabase.get(ctx).users() } // <-- Obtener DAO
 
-    // Observar UserEntity desde Room
-    val userEntity by remember(authEmail) {
-        if (authEmail.isNotBlank()) usersDao.observeByEmail(authEmail) else flowOf(null)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    // Trigger para recargar datos tras guardar
+    var refreshTrigger by remember { mutableStateOf(0) }
 
-    // Email mostrado
-    val displayEmail = userEntity?.email ?: authEmail ?: "Sin email registrado"
-
-    // --- Estado Editable LOCAL (sincronizado desde UserEntity) ---
-    var name by rememberSaveable(userEntity?.nombre) { mutableStateOf(userEntity?.nombre ?: "") }
-    var phone by rememberSaveable(userEntity?.fono) { mutableStateOf(userEntity?.fono ?: "") }
-    var bio by rememberSaveable(userEntity?.bio) { mutableStateOf(userEntity?.bio ?: "") }
-    var avatarUriInternal by remember { mutableStateOf<Uri?>(null) } // Uri para Coil/UI
-    var avatarUriString by remember { mutableStateOf<String?>(null) } // String actual en la BD
-
-    // Sincronizar estado local del avatar cuando UserEntity cambia
-    LaunchedEffect(userEntity?.avatarUri) { // Observa específicamente el cambio de avatarUri
-        val dbUriString = userEntity?.avatarUri
-        if (dbUriString != avatarUriString) { // Solo actualiza si es diferente al estado local
-            avatarUriString = dbUriString
-            avatarUriInternal = dbUriString?.let { uriStr ->
-                try { Uri.parse(uriStr) } catch (e: Exception) { null }
+    // --- 1. Cargar Usuario desde API ---
+    val user by produceState<User?>(initialValue = null, key1 = authEmail, key2 = refreshTrigger) {
+        if (authEmail.isNotBlank()) {
+            val dto = authRepo.getUserProfile(authEmail)
+            value = dto?.let {
+                User(
+                    email = it.email,
+                    nombre = it.nombre,
+                    rol = it.rol,
+                    planEndMillis = it.planEndMillis,
+                    sedeId = it.sedeId,
+                    sedeName = it.sedeName,
+                    sedeLat = it.sedeLat,
+                    sedeLng = it.sedeLng,
+                    avatarUri = it.avatarUri,
+                    fono = it.fono,
+                    bio = it.bio
+                )
             }
         }
     }
-    // Sincronizar otros campos si cambian desde fuera (menos probable, pero por seguridad)
-    LaunchedEffect(userEntity?.nombre) { if (userEntity?.nombre != name) name = userEntity?.nombre ?: "" }
-    LaunchedEffect(userEntity?.fono) { if (userEntity?.fono != phone) phone = userEntity?.fono ?: "" }
-    LaunchedEffect(userEntity?.bio) { if (userEntity?.bio != bio) bio = userEntity?.bio ?: "" }
 
+    // Email mostrado
+    val displayEmail = user?.email ?: authEmail ?: "Cargando..."
+
+    // --- Estado Editable LOCAL ---
+    var name by rememberSaveable(user) { mutableStateOf(user?.nombre ?: "") }
+    var phone by rememberSaveable(user) { mutableStateOf(user?.fono ?: "") }
+    var bio by rememberSaveable(user) { mutableStateOf(user?.bio ?: "") }
+
+    // Avatar
+    var avatarUriInternal by remember { mutableStateOf<Uri?>(null) }
+    var avatarUriString by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(user?.avatarUri) {
+        val remoteUri = user?.avatarUri
+        if (remoteUri != avatarUriString) {
+            avatarUriString = remoteUri
+            avatarUriInternal = remoteUri?.let { try { Uri.parse(it) } catch (e: Exception) { null } }
+        }
+    }
 
     // Validaciones
     var phoneError by remember { mutableStateOf<String?>(null) }
@@ -107,91 +123,106 @@ fun ProfileScreen(
     val bioCount by remember(bio) { derivedStateOf { bio.length } }
     val isPhoneValid by remember(phone) {
         derivedStateOf {
-            if (phone.isBlank()) return@derivedStateOf true // Teléfono opcional
+            if (phone.isBlank()) return@derivedStateOf true
             val digits = phone.filter { it.isDigit() }
             digits.length in 8..12
         }
     }
     LaunchedEffect(phone) {
-        if (phone.isNotBlank() && !isPhoneValid) { phoneError = "Teléfono inválido (8-12 dígitos)" }
-        else { phoneError = null }
+        phoneError = if (phone.isNotBlank() && !isPhoneValid) "Teléfono inválido" else null
     }
 
     // Estado UI
     var saving by remember { mutableStateOf(false) }
     var showRemoveDialog by remember { mutableStateOf(false) }
-    var show by remember { mutableStateOf(false) } // Animación entrada
+    var show by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { show = true }
 
     val bg = Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f), MaterialTheme.colorScheme.surface))
 
-    // ====== Pickers ======
+    // --- Lógica de Guardado General (Avatar o Textos) ---
+    fun saveProfile(newName: String, newPhone: String, newBio: String, newAvatarUri: String?, oldAvatarUri: String?) {
+        if (authEmail.isBlank()) return
+        scope.launch {
+            saving = true
+            try {
+                // 1. Llamar a la API
+                val request = ProfileUpdateRequest(
+                    nombre = newName.trim(),
+                    fono = newPhone.trim().ifBlank { null },
+                    bio = newBio.trim().ifBlank { null },
+                    avatarUri = newAvatarUri
+                )
+                val response = api.updateProfile(authEmail, request)
+
+                if (response.isSuccessful) {
+                    // 2. Limpieza de imagen antigua local si cambió
+                    if (oldAvatarUri != null && oldAvatarUri != newAvatarUri) {
+                        withContext(Dispatchers.IO) {
+                            ImageUriUtils.deleteFileFromInternalStorage(oldAvatarUri)
+                        }
+                    }
+                    snackbar.showSnackbar("Perfil actualizado correctamente ✅")
+                    refreshTrigger++ // Recargar datos desde el servidor
+                } else {
+                    snackbar.showSnackbar("Error al guardar: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("ProfileScreen", "Error guardando perfil", e)
+                snackbar.showSnackbar("Error de conexión")
+            } finally {
+                saving = false
+            }
+        }
+    }
+
+    // Pickers
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
 
-    // --- FUNCIÓN PARA GUARDAR NUEVA URI DE AVATAR (en Room) ---
-    fun saveNewAvatarUri(newUriString: String?, oldUriString: String?) {
-        if (authEmail.isBlank()) { /* ... Error ... */ return }
-        scope.launch {
-            val updatedRows = usersDao.updateAvatarUri(authEmail, newUriString)
-            if (updatedRows > 0) {
-                if (oldUriString != null && oldUriString != newUriString) {
-                    Log.d("ProfileScreen", "Borrando imagen antigua: $oldUriString")
-                    withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldUriString) }
+    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && pendingCameraUri != null) {
+            val newUri = pendingCameraUri.toString()
+            // Guardar inmediatamente al tomar foto (conservando los textos actuales)
+            saveProfile(name, phone, bio, newUri, avatarUriString)
+        }
+        pendingCameraUri = null
+    }
+
+    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            try {
+                val u = ImageUriUtils.createTempImageUri(ctx).also { pendingCameraUri = it }
+                takePictureLauncher.launch(u)
+            } catch (e: Exception) {
+                scope.launch { snackbar.showSnackbar("Error al iniciar cámara") }
+            }
+        } else {
+            scope.launch { snackbar.showSnackbar("Permiso denegado") }
+        }
+    }
+
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                // Copiar a almacenamiento interno primero
+                val internalUri = withContext(Dispatchers.IO) {
+                    ImageUriUtils.copyUriToInternalStorage(ctx, uri, "avatar_${authEmail.replace("@", "_")}")
                 }
-                // El LaunchedEffect(userEntity?.avatarUri) actualizará el estado local
-                snackbar.showSnackbar("Foto de perfil actualizada ✅")
-            } else { /* ... Error handling ... */
-                snackbar.showSnackbar("Error al guardar la foto de perfil")
-                if (newUriString != null) {
-                    Log.w("ProfileScreen", "Error al guardar en BD, borrando archivo copiado: $newUriString")
-                    withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(newUriString) }
+                if (internalUri != null) {
+                    saveProfile(name, phone, bio, internalUri, avatarUriString)
+                } else {
+                    snackbar.showSnackbar("Error al procesar imagen")
                 }
             }
         }
     }
 
-    // Cámara
-    val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success && pendingCameraUri != null) {
-            val newUriString = pendingCameraUri.toString()
-            Log.d("ProfileScreen", "Foto tomada, guardando URI: $newUriString")
-            saveNewAvatarUri(newUriString = newUriString, oldUriString = avatarUriString)
-        } else { Log.d("ProfileScreen", "Foto cancelada o fallida") }
-        pendingCameraUri = null
-    }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            try {
-                val u = ImageUriUtils.createTempImageUri(ctx).also { pendingCameraUri = it; Log.d("ProfileScreen", "URI temporal: $it") }
-                takePictureLauncher.launch(u)
-            } catch (e: Exception) { Log.e("ProfileScreen", "Error al crear URI", e); scope.launch { snackbar.showSnackbar("Error cámara") } }
-        } else { scope.launch { snackbar.showSnackbar("Permiso cámara denegado") } }
-    }
-
-    // Galería (Photo Picker)
-    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            Log.d("ProfileScreen", "Imagen galería: $uri")
-            scope.launch(Dispatchers.IO) {
-                Log.d("ProfileScreen", "Copiando a interno...")
-                val internalUriString = ImageUriUtils.copyUriToInternalStorage(ctx, uri, "avatar_${authEmail.replace("@", "_")}")
-                withContext(Dispatchers.Main) {
-                    if (internalUriString != null) {
-                        Log.d("ProfileScreen", "Copia OK ($internalUriString), guardando...")
-                        saveNewAvatarUri(newUriString = internalUriString, oldUriString = avatarUriString)
-                    } else { Log.e("ProfileScreen", "Error al copiar"); snackbar.showSnackbar("Error al copiar imagen") }
-                }
-            }
-        } else { Log.d("ProfileScreen", "Galería cancelada") }
-    }
-
-    // Lógica de Ancho
     val widthSizeClass = windowSizeClass.widthSizeClass
     val isCompact = widthSizeClass == WindowWidthSizeClass.Compact
     val cardWidthModifier = if (isCompact) Modifier.fillMaxWidth(0.95f) else Modifier.width(550.dp)
 
     Scaffold(
-        topBar = { /* ... sin cambios ... */
+        topBar = {
             TopAppBar(
                 title = { Text("Perfil", color = MaterialTheme.colorScheme.onBackground) },
                 navigationIcon = {
@@ -222,109 +253,91 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-
-                        // ==== Avatar (Usa avatarUriInternal del estado local) ====
+                        // ==== Avatar ====
                         Box(modifier = Modifier.wrapContentSize(), contentAlignment = Alignment.Center) {
                             Box(
                                 modifier = Modifier.size(110.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (avatarUriInternal != null) {
-                                    SubcomposeAsyncImage( model = ImageRequest.Builder(ctx).data(avatarUriInternal).crossfade(true).build(), /*...*/
+                                    SubcomposeAsyncImage(
+                                        model = ImageRequest.Builder(ctx).data(avatarUriInternal).crossfade(true).build(),
                                         contentDescription = "Avatar",
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize().clip(CircleShape),
                                         loading = { CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(28.dp)) },
-                                        error = { Image(painter = painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Avatar por defecto", modifier = Modifier.size(72.dp)) },
+                                        error = { Image(painter = painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.size(72.dp)) },
                                         success = { SubcomposeAsyncImageContent() }
                                     )
                                 } else {
-                                    Image(painter = painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Avatar por defecto", modifier = Modifier.size(72.dp))
+                                    Image(painter = painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.size(72.dp))
                                 }
                             }
-                            // Botón quitar
                             if (avatarUriInternal != null) {
-                                IconButton( onClick = { showRemoveDialog = true }, modifier = Modifier.align(Alignment.BottomEnd).offset(x = 8.dp, y = 8.dp).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), CircleShape).shadow(1.dp, CircleShape)
-                                ) { Icon(Icons.Default.Clear, "Quitar foto", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) }
+                                IconButton(
+                                    onClick = { showRemoveDialog = true },
+                                    modifier = Modifier.align(Alignment.BottomEnd).offset(x = 8.dp, y = 8.dp).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), CircleShape).shadow(1.dp, CircleShape)
+                                ) { Icon(Icons.Default.Clear, "Quitar", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) }
                             }
                         }
                         Spacer(Modifier.height(12.dp))
 
-                        // Botones Galería / Cámara
+                        // Botones Foto
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            ElevatedButton(onClick = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { /*...*/ Text("Galería") }
-                            ElevatedButton(onClick = { requestCameraPermission.launch(Manifest.permission.CAMERA) }) { /*...*/ Text("Cámara") }
+                            ElevatedButton(onClick = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Galería") }
+                            ElevatedButton(onClick = { requestCameraPermission.launch(Manifest.permission.CAMERA) }) { Text("Cámara") }
                         }
                         Spacer(Modifier.height(18.dp))
 
-                        // ==== Email ====
+                        // Email (Solo lectura)
                         Text(displayEmail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(16.dp))
 
-                        // ==== Datos editables (AHORA leen/escriben estado local 'name', 'phone', 'bio') ====
+                        // ==== Campos Editables ====
                         OutlinedTextField(
-                            value = name, // Lee estado local
-                            onValueChange = { name = it }, // Actualiza estado local
-                            label = { Text("Nombre") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next),
-                            modifier = Modifier.fillMaxWidth()
+                            value = name, onValueChange = { name = it }, label = { Text("Nombre") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
-                            value = phone, // Lee estado local
-                            onValueChange = { phone = it }, // Actualiza estado local
-                            label = { Text("Teléfono") }, singleLine = true, isError = phoneError != null,
-                            supportingText = { phoneError?.let { Text(it) } },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-                            modifier = Modifier.fillMaxWidth()
+                            value = phone, onValueChange = { phone = it }, label = { Text("Teléfono") }, singleLine = true,
+                            isError = phoneError != null, supportingText = { phoneError?.let { Text(it) } },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
-                            value = bio, // Lee estado local
-                            onValueChange = { bio = if (it.length <= maxBioChars) it else it.take(maxBioChars) }, // Actualiza estado local
+                            value = bio, onValueChange = { bio = if (it.length <= maxBioChars) it else it.take(maxBioChars) },
                             label = { Text("Bio") }, singleLine = false, minLines = 3,
-                            supportingText = { Text("${bioCount}/${maxBioChars} caracteres") },
-                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
-                            modifier = Modifier.fillMaxWidth()
+                            supportingText = { Text("${bioCount}/${maxBioChars}") },
+                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done), modifier = Modifier.fillMaxWidth()
                         )
 
                         Spacer(Modifier.height(20.dp))
 
-                        // ==== Botón Guardar (AHORA guarda en Room usando DAO) ====
+                        // Botón Guardar Cambios
                         Button(
-                            onClick = {
-                                // --- Guardar Nombre, Fono, Bio en UserEntity (Room) ---
-                                if (authEmail.isBlank()) { /* Error */ return@Button }
-                                scope.launch {
-                                    try {
-                                        saving = true
-                                        val updatedRows = usersDao.updateProfileDetails(
-                                            email = authEmail,
-                                            newName = name.trim(),
-                                            newFono = phone.trim().ifBlank { null },
-                                            newBio = bio.trim().ifBlank { null }
-                                        )
-                                        if (updatedRows > 0) {
-                                            snackbar.showSnackbar("Datos del perfil guardados ✅")
-                                        } else { snackbar.showSnackbar("No se pudieron guardar los datos") }
-                                    } catch (e: Exception) {
-                                        Log.e("ProfileScreen", "Error al guardar perfil en Room", e)
-                                        snackbar.showSnackbar("Error al guardar: ${e.message ?: "desconocido"}")
-                                    } finally { saving = false }
-                                }
-                            },
-                            enabled = !saving && (phoneError == null) && authEmail.isNotBlank(),
+                            onClick = { saveProfile(name, phone, bio, avatarUriString, null) }, // null en oldUri porque no cambiamos la foto aquí
+                            enabled = !saving && phoneError == null && authEmail.isNotBlank(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            if (saving) { /* Indicador */
-                                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Guardando…")
-                            } else { Text("Guardar Datos") }
+                            if (saving) {
+                                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text("Guardando...")
+                            } else {
+                                Text("Guardar Datos")
+                            }
                         }
 
-                        // Botón Cerrar Sesión
+                        // Botón Logout
                         Button(
-                            onClick = { scope.launch { ServiceLocator.auth(ctx).logout(); nav.navigate(NavRoutes.LOGIN) { popUpTo(0) } } },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                            onClick = {
+                                scope.launch {
+                                    authRepo.logout()
+                                    nav.navigate(NavRoutes.LOGIN) { popUpTo(0) }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         ) { Text("Cerrar sesión") }
                     }
@@ -333,22 +346,19 @@ fun ProfileScreen(
         }
     }
 
-    // ==== Diálogo: quitar foto (Usa saveNewAvatarUri) ====
+    // Diálogo Quitar Foto
     if (showRemoveDialog) {
         AlertDialog(
             onDismissRequest = { showRemoveDialog = false },
-            title = { Text("Quitar foto de perfil") },
-            text = { Text("¿Seguro que quieres quitar tu foto y volver al avatar por defecto?") },
+            title = { Text("Quitar foto") },
+            text = { Text("¿Volver al avatar por defecto?") },
             confirmButton = {
                 TextButton(onClick = {
                     showRemoveDialog = false
-                    Log.d("ProfileScreen", "Quitando foto, URI antigua: $avatarUriString")
-                    saveNewAvatarUri(newUriString = null, oldUriString = avatarUriString) // Llama a guardar null
+                    saveProfile(name, phone, bio, null, avatarUriString) // null como nueva URI
                 }) { Text("Quitar") }
             },
             dismissButton = { TextButton(onClick = { showRemoveDialog = false }) { Text("Cancelar") } }
         )
     }
 }
-
-

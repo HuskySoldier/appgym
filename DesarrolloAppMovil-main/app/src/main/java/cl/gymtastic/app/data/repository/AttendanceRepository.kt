@@ -2,70 +2,64 @@ package cl.gymtastic.app.data.repository
 
 import android.content.Context
 import android.util.Log
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import cl.gymtastic.app.data.local.entity.AttendanceEntity
+import cl.gymtastic.app.data.model.Attendance // <-- Nuevo modelo
 import cl.gymtastic.app.util.ServiceLocator
-import retrofit2.HttpException
 import java.io.IOException
 
 class AttendanceRepository(context: Context) {
-    private val db = GymTasticDatabase.get(context)
-    private val dao = db.attendance()
     private val api = ServiceLocator.api()
 
-    // CORRECCIÓN: Quitamos 'private' para que HomeScreen pueda usarla
-    suspend fun syncHistoryFromApi(userEmail: String) {
-        try {
+    // Obtener historial directo de la API
+    suspend fun getHistory(userEmail: String): List<Attendance> {
+        return try {
             val response = api.getAttendanceHistory(userEmail)
             if (response.isSuccessful) {
-                val remoteHistory = response.body() ?: emptyList()
-                val entities = remoteHistory.map { dto ->
-                    AttendanceEntity(
+                // Mapeamos del DTO al Modelo
+                response.body()?.map { dto ->
+                    Attendance(
                         id = dto.id,
                         userEmail = dto.userEmail,
                         timestamp = dto.timestamp,
                         checkOutTimestamp = dto.checkOutTimestamp
                     )
-                }
-                db.attendance().run {
-                    clearByUser(userEmail)
-                    insertAll(entities)
-                }
-            } else if (response.code() == 404) {
-                Log.w("AttendanceRepo", "Usuario no encontrado en servicio de asistencia (404)")
+                } ?: emptyList()
             } else {
-                Log.e("AttendanceRepo", "Error al obtener historial: HTTP ${response.code()}")
+                Log.e("AttendanceRepo", "Error API: ${response.code()}")
+                emptyList()
             }
-        } catch (e: IOException) {
-            Log.e("AttendanceRepo", "Error de red al sincronizar historial", e)
-        } catch (e: HttpException) {
-            Log.e("AttendanceRepo", "Error HTTP al sincronizar historial", e)
+        } catch (e: Exception) {
+            Log.e("AttendanceRepo", "Excepción red", e)
+            emptyList()
         }
     }
 
-    fun observe(userEmail: String) = dao.observeByUser(userEmail)
-
+    // Check-In directo a API
     suspend fun checkIn(userEmail: String) {
         try {
             val response = api.checkIn(userEmail)
             if (!response.isSuccessful) {
-                throw IOException("Error Check-In: ${response.errorBody()?.string() ?: "Error de servidor"}")
+                throw IOException("Error Check-In: ${response.message()}")
             }
-            syncHistoryFromApi(userEmail)
-        } catch (e: IOException) {
-            throw IOException("Error de conexión al registrar Check-In: ${e.message}")
+        } catch (e: Exception) {
+            throw IOException("Error de conexión al registrar Check-In", e)
         }
     }
 
+    // Check-Out directo a API
     suspend fun checkOut(userEmail: String) {
         try {
             val response = api.checkOut(userEmail)
             if (!response.isSuccessful) {
-                throw IOException("Error Check-Out: ${response.errorBody()?.string() ?: "Error de servidor"}")
+                throw IOException("Error Check-Out: ${response.message()}")
             }
-            syncHistoryFromApi(userEmail)
-        } catch (e: IOException) {
-            throw IOException("Error de conexión al registrar Check-Out: ${e.message}")
+        } catch (e: Exception) {
+            throw IOException("Error de conexión al registrar Check-Out", e)
         }
+    }
+
+    // Método de compatibilidad (si alguien llama a syncHistoryFromApi, no hace nada o solo loguea)
+    suspend fun syncHistoryFromApi(userEmail: String) {
+        // Ya no es necesario sincronizar a local, pero lo dejamos vacío para no romper HomeScreen si lo llama
+        Log.d("AttendanceRepo", "syncHistoryFromApi llamado (Backend-Only mode)")
     }
 }

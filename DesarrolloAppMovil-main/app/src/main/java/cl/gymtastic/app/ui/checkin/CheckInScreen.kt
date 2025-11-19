@@ -2,7 +2,6 @@ package cl.gymtastic.app.ui.checkin
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -14,30 +13,25 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
-import androidx.compose.runtime.* // Incluye produceState, remember, etc.
-import androidx.compose.runtime.getValue // <--- IMPORTANTE
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import cl.gymtastic.app.data.local.entity.AttendanceEntity
+import cl.gymtastic.app.data.model.Attendance // <-- Usar Modelo
+import cl.gymtastic.app.data.model.User       // <-- Usar Modelo
 import cl.gymtastic.app.ui.navigation.NavRoutes
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import cl.gymtastic.app.data.local.entity.UserEntity
-import cl.gymtastic.app.util.ServiceLocator // <--- IMPORTANTE
+import cl.gymtastic.app.util.ServiceLocator
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
-import com.google.zxing.common.BitMatrix
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -55,28 +49,44 @@ fun CheckInScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    val authPrefs = remember { ServiceLocator.auth(ctx).prefs() }
-    val authEmail by authPrefs.userEmailFlow.collectAsStateWithLifecycle(initialValue = "")
+    // Repositorios
+    val authRepo = remember { ServiceLocator.auth(ctx) }
+    val attendanceRepo = remember { ServiceLocator.attendance(ctx) }
 
-    val usersDao = remember { GymTasticDatabase.get(ctx).users() }
-    val userEntity by remember(authEmail) {
-        if (authEmail.isNotBlank()) {
-            usersDao.observeByEmail(authEmail)
-        } else {
-            flowOf(null)
-        }
-    }.collectAsStateWithLifecycle(initialValue = null)
+    // Sesión
+    val authPrefs = remember { authRepo.prefs() }
+    val authEmail by authPrefs.userEmailFlow.collectAsState(initial = "")
 
-    val attendanceFlow = remember(authEmail) {
+    // --- 1. Cargar Usuario (Desde API) ---
+    val user by produceState<User?>(initialValue = null, key1 = authEmail) {
         if (authEmail.isNotBlank()) {
-            ServiceLocator.attendance(ctx).observe(authEmail)
-        } else {
-            flowOf(emptyList())
+            val dto = authRepo.getUserProfile(authEmail)
+            value = dto?.let {
+                User(
+                    email = it.email,
+                    nombre = it.nombre,
+                    rol = it.rol,
+                    planEndMillis = it.planEndMillis,
+                    // Mapear resto de campos si es necesario para esta pantalla
+                    avatarUri = it.avatarUri
+                )
+            }
         }
     }
-    val list: List<AttendanceEntity> by attendanceFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // --- 2. Cargar Historial (Desde API) ---
+    // Usamos una variable de refresco para recargar tras check-in/out
+    var refreshTrigger by remember { mutableStateOf(0) }
+
+    val list by produceState<List<Attendance>>(initialValue = emptyList(), key1 = authEmail, key2 = refreshTrigger) {
+        if (authEmail.isNotBlank()) {
+            value = attendanceRepo.getHistory(authEmail)
+        }
+    }
+
     val hasOpen = remember(list) { list.any { it.checkOutTimestamp == null } }
 
+    // --- 3. Generar QR ---
     val barcodeBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = authEmail) {
         value = if (authEmail.isNotBlank()) {
             withContext(Dispatchers.IO) {
@@ -110,16 +120,17 @@ fun CheckInScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             PillButtonsRow(
-                userEntity = userEntity,
+                user = user,
                 hasOpenSession = hasOpen,
                 onCheckIn = {
                     if (authEmail.isBlank()) return@PillButtonsRow
                     scope.launch {
                         try {
-                            ServiceLocator.attendance(ctx).checkIn(authEmail)
+                            attendanceRepo.checkIn(authEmail)
                             snackbar.showMessage("✅ Check-In registrado")
+                            refreshTrigger++ // Recargar lista
                         } catch (e: Exception) {
-                            snackbar.showMessage("❌ Error: ${e.localizedMessage}")
+                            snackbar.showMessage("❌ Error: ${e.message}")
                         }
                     }
                 },
@@ -127,10 +138,11 @@ fun CheckInScreen(
                     if (authEmail.isBlank()) return@PillButtonsRow
                     scope.launch {
                         try {
-                            ServiceLocator.attendance(ctx).checkOut(authEmail)
+                            attendanceRepo.checkOut(authEmail)
                             snackbar.showMessage("✅ Check-Out registrado")
+                            refreshTrigger++ // Recargar lista
                         } catch (e: Exception) {
-                            snackbar.showMessage("❌ Error: ${e.localizedMessage}")
+                            snackbar.showMessage("❌ Error: ${e.message}")
                         }
                     }
                 }
@@ -183,9 +195,10 @@ fun CheckInScreen(
 }
 
 @Composable
-private fun PillButtonsRow(userEntity: UserEntity?, hasOpenSession: Boolean, onCheckIn: () -> Unit, onCheckOut: () -> Unit) {
+private fun PillButtonsRow(user: User?, hasOpenSession: Boolean, onCheckIn: () -> Unit, onCheckOut: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val hasActivePlan = userEntity?.hasActivePlan ?: false
+    val hasActivePlan = user?.hasActivePlan ?: false
+
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(end = 8.dp)) {
         Button(onClick = onCheckIn, enabled = hasActivePlan && !hasOpenSession, shape = MaterialTheme.shapes.extraLarge) {
             Icon(Icons.Filled.Login, null); Spacer(Modifier.width(8.dp)); Text("IN")
@@ -197,7 +210,7 @@ private fun PillButtonsRow(userEntity: UserEntity?, hasOpenSession: Boolean, onC
 }
 
 @Composable
-private fun AttendanceCard(e: AttendanceEntity) {
+private fun AttendanceCard(e: Attendance) {
     val cs = MaterialTheme.colorScheme
     val inTxt = fmt(e.timestamp)
     val outTxt = fmt(e.checkOutTimestamp)

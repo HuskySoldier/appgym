@@ -1,7 +1,7 @@
 package cl.gymtastic.app.data.remote
 
-import cl.gymtastic.app.data.local.entity.ProductEntity
-import cl.gymtastic.app.data.local.entity.TrainerEntity
+import cl.gymtastic.app.data.model.Product
+import cl.gymtastic.app.data.model.Trainer
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -49,13 +49,13 @@ interface GymTasticApi {
 
     // --- 4. PRODUCT SERVICE (Puerto 8081) ---
     @GET("$BASE_IP:8081/products")
-    suspend fun getProducts(): Response<List<ProductEntity>>
+    suspend fun getProducts(): Response<List<Product>>
 
     @POST("$BASE_IP:8081/products")
-    suspend fun createProduct(@Body product: ProductEntity): Response<ProductEntity>
+    suspend fun createProduct(@Body product: Product): Response<Product>
 
     @PUT("$BASE_IP:8081/products/{id}")
-    suspend fun updateProduct(@Path("id") id: Int, @Body product: ProductEntity): Response<ProductEntity>
+    suspend fun updateProduct(@Path("id") id: Int, @Body product: Product): Response<Product>
 
     @DELETE("$BASE_IP:8081/products/{id}")
     suspend fun deleteProduct(@Path("id") id: Int): Response<Unit>
@@ -63,13 +63,13 @@ interface GymTasticApi {
 
     // --- 5. TRAINERS SERVICE (Puerto 8085) ---
     @GET("$BASE_IP:8085/trainers")
-    suspend fun getTrainers(): Response<List<TrainerEntity>>
+    suspend fun getTrainers(): Response<List<Trainer>>
 
     @POST("$BASE_IP:8085/trainers")
-    suspend fun createTrainer(@Body trainer: TrainerEntity): Response<TrainerEntity>
+    suspend fun createTrainer(@Body trainer: Trainer): Response<Trainer>
 
     @PUT("$BASE_IP:8085/trainers/{id}")
-    suspend fun updateTrainer(@Path("id") id: Long, @Body trainer: TrainerEntity): Response<TrainerEntity>
+    suspend fun updateTrainer(@Path("id") id: Long, @Body trainer: Trainer): Response<Trainer>
 
     @DELETE("$BASE_IP:8085/trainers/{id}")
     suspend fun deleteTrainer(@Path("id") id: Long): Response<Unit>

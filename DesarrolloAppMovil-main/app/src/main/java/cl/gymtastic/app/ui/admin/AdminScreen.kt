@@ -42,19 +42,18 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import cl.gymtastic.app.data.local.entity.ProductEntity
-import cl.gymtastic.app.data.local.entity.TrainerEntity
-import cl.gymtastic.app.data.local.entity.UserEntity
+// --- IMPORTS CORREGIDOS ---
+import cl.gymtastic.app.data.model.Product
+import cl.gymtastic.app.data.model.Trainer
+import cl.gymtastic.app.data.remote.UserProfileDto
+// --------------------------
 import cl.gymtastic.app.util.ImageUriUtils
 import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
@@ -128,11 +127,37 @@ fun AdminProductsTab() {
     val scope = rememberCoroutineScope()
     val repo = remember { ServiceLocator.products(ctx) }
     val money = remember { NumberFormat.getCurrencyInstance(Locale("es", "CL")).apply { maximumFractionDigits = 0 } }
-    // Observamos DB local, que se actualiza al guardar/borrar en API
-    val merch by repo.observeMerch().collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Estado local en lugar de Flow de base de datos
+    var merch by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+
+    // Función para recargar datos desde la API
+    fun loadProducts() {
+        scope.launch {
+            loading = true
+            // Asegúrate de que ProductsRepository tenga un método 'getAll()' que llame a la API y devuelva List<Product>
+            // Si no lo tienes, usa directamente: ServiceLocator.api().getProducts().body() ?: emptyList()
+            try {
+                // Opción directa si no has actualizado el repo:
+                val response = ServiceLocator.api().getProducts()
+                if (response.isSuccessful) {
+                    // Filtramos merch solo si es necesario, o mostramos todo
+                    merch = response.body()?.filter { it.tipo == "merch" } ?: emptyList()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Error cargando productos", Toast.LENGTH_SHORT).show()
+            }
+            loading = false
+        }
+    }
+
+    // Cargar al inicio
+    LaunchedEffect(Unit) { loadProducts() }
+
     var showEditDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf<ProductEntity?>(null) }
-    var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf<Product?>(null) }
+    var editingProduct by remember { mutableStateOf<Product?>(null) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -144,18 +169,22 @@ fun AdminProductsTab() {
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 96.dp)
-        ) {
-            items(merch, key = { it.id }) { product ->
-                ProductAdminCard(
-                    product = product,
-                    priceText = money.format(product.precio),
-                    onEdit = { editingProduct = product; showEditDialog = true },
-                    onDelete = { showDeleteDialog = product }
-                )
+        if (loading && merch.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 96.dp)
+            ) {
+                items(merch, key = { it.id }) { product ->
+                    ProductAdminCard(
+                        product = product,
+                        priceText = money.format(product.precio),
+                        onEdit = { editingProduct = product; showEditDialog = true },
+                        onDelete = { showDeleteDialog = product }
+                    )
+                }
             }
         }
     }
@@ -167,14 +196,24 @@ fun AdminProductsTab() {
             onSave = { productToSave, oldImageUri ->
                 scope.launch {
                     try {
-                        // Guardar en API + DB
-                        repo.save(productToSave)
-                        // Si cambia la imagen y es local, borrar la vieja
+                        // Aquí usamos la API directa para guardar (o el método save del repo actualizado)
+                        val api = ServiceLocator.api()
+                        // Mapeamos Product a ProductEntity si tu API aún usa ese nombre, o Product si ya lo cambiaste
+                        // Asumiremos que tu API espera el mismo objeto JSON
+                        if (productToSave.id == 0) {
+                            api.createProduct(productToSave) // Crear
+                        } else {
+                            api.updateProduct(productToSave.id, productToSave) // Editar
+                        }
+
+                        // Manejo de imagen local (opcional si subieras la imagen al server real)
                         if (oldImageUri != null && oldImageUri != productToSave.img) {
                             withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldImageUri) }
                         }
+
                         showEditDialog = false
                         Toast.makeText(ctx, "Producto guardado", Toast.LENGTH_SHORT).show()
+                        loadProducts() // Recargar lista
                     } catch (e: Exception) {
                         Toast.makeText(ctx, "Error al guardar: ${e.message}", Toast.LENGTH_LONG).show()
                     }
@@ -190,9 +229,10 @@ fun AdminProductsTab() {
             onConfirm = {
                 scope.launch {
                     try {
-                        repo.delete(productToDelete)
+                        ServiceLocator.api().deleteProduct(productToDelete.id)
                         withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(productToDelete.img) }
                         Toast.makeText(ctx, "Producto eliminado", Toast.LENGTH_SHORT).show()
+                        loadProducts() // Recargar lista
                     } catch (e: Exception) {
                         Toast.makeText(ctx, "Error al eliminar: ${e.message}", Toast.LENGTH_LONG).show()
                     }
@@ -204,7 +244,7 @@ fun AdminProductsTab() {
 }
 
 @Composable
-fun ProductAdminCard(product: ProductEntity, priceText: String, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun ProductAdminCard(product: Product, priceText: String, onEdit: () -> Unit, onDelete: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp),
@@ -231,7 +271,7 @@ fun ProductAdminCard(product: ProductEntity, priceText: String, onEdit: () -> Un
 
 @SuppressLint("UnrememberedMutableState")
 @Composable
-fun ProductEditDialog(product: ProductEntity?, onDismiss: () -> Unit, onSave: (ProductEntity, String?) -> Unit) {
+fun ProductEditDialog(product: Product?, onDismiss: () -> Unit, onSave: (Product, String?) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val oldImageUri = product?.img
@@ -289,7 +329,7 @@ fun ProductEditDialog(product: ProductEntity?, onDismiss: () -> Unit, onSave: (P
                 OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Descripción (opcional)") }, minLines = 3, modifier = Modifier.fillMaxWidth())
             }
         },
-        confirmButton = { Button(onClick = { onSave(ProductEntity(id = product?.id ?: 0, nombre = name.trim(), descripcion = desc.trim(), precio = price.toDoubleOrNull() ?: 0.0, stock = stock.toIntOrNull(), tipo = "merch", img = imgUriString.trim().ifBlank { null }), oldImageUri) }, enabled = isFormValid) { Text("Guardar") } },
+        confirmButton = { Button(onClick = { onSave(Product(id = product?.id ?: 0, nombre = name.trim(), descripcion = desc.trim(), precio = price.toDoubleOrNull() ?: 0.0, stock = stock.toIntOrNull(), tipo = "merch", img = imgUriString.trim().ifBlank { null }), oldImageUri) }, enabled = isFormValid) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )
 }
@@ -299,11 +339,30 @@ fun ProductEditDialog(product: ProductEntity?, onDismiss: () -> Unit, onSave: (P
 fun AdminTrainersTab() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repo = remember { ServiceLocator.trainers(ctx) }
-    val trainers by repo.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Estado local
+    var trainers by remember { mutableStateOf<List<Trainer>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+
+    fun loadTrainers() {
+        scope.launch {
+            loading = true
+            try {
+                val response = ServiceLocator.api().getTrainers()
+                if (response.isSuccessful) {
+                    trainers = response.body() ?: emptyList()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Error cargando trainers", Toast.LENGTH_SHORT).show()
+            }
+            loading = false
+        }
+    }
+    LaunchedEffect(Unit) { loadTrainers() }
+
     var showEditDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf<TrainerEntity?>(null) }
-    var editingTrainer by remember { mutableStateOf<TrainerEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf<Trainer?>(null) }
+    var editingTrainer by remember { mutableStateOf<Trainer?>(null) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -315,17 +374,21 @@ fun AdminTrainersTab() {
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 96.dp)
-        ) {
-            items(trainers, key = { it.id }) { trainer ->
-                TrainerAdminCard(
-                    trainer = trainer,
-                    onEdit = { editingTrainer = trainer; showEditDialog = true },
-                    onDelete = { showDeleteDialog = trainer }
-                )
+        if (loading && trainers.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 96.dp)
+            ) {
+                items(trainers, key = { it.id }) { trainer ->
+                    TrainerAdminCard(
+                        trainer = trainer,
+                        onEdit = { editingTrainer = trainer; showEditDialog = true },
+                        onDelete = { showDeleteDialog = trainer }
+                    )
+                }
             }
         }
     }
@@ -337,12 +400,19 @@ fun AdminTrainersTab() {
             onSave = { trainerToSave, oldImageUri ->
                 scope.launch {
                     try {
-                        repo.save(trainerToSave)
+                        val api = ServiceLocator.api()
+                        if (trainerToSave.id == 0L) {
+                            api.createTrainer(trainerToSave)
+                        } else {
+                            api.updateTrainer(trainerToSave.id, trainerToSave)
+                        }
+
                         if (oldImageUri != null && oldImageUri != trainerToSave.img) {
                             withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(oldImageUri) }
                         }
                         showEditDialog = false
                         Toast.makeText(ctx, "Trainer guardado", Toast.LENGTH_SHORT).show()
+                        loadTrainers()
                     } catch (e: Exception) {
                         Toast.makeText(ctx, "Error al guardar: ${e.message}", Toast.LENGTH_LONG).show()
                     }
@@ -358,9 +428,10 @@ fun AdminTrainersTab() {
             onConfirm = {
                 scope.launch {
                     try {
-                        repo.delete(trainerToDelete)
+                        ServiceLocator.api().deleteTrainer(trainerToDelete.id)
                         withContext(Dispatchers.IO) { ImageUriUtils.deleteFileFromInternalStorage(trainerToDelete.img) }
                         Toast.makeText(ctx, "Trainer eliminado", Toast.LENGTH_SHORT).show()
+                        loadTrainers()
                     } catch (e: Exception) {
                         Toast.makeText(ctx, "Error al eliminar: ${e.message}", Toast.LENGTH_LONG).show()
                     }
@@ -372,7 +443,7 @@ fun AdminTrainersTab() {
 }
 
 @Composable
-fun TrainerAdminCard(trainer: TrainerEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun TrainerAdminCard(trainer: Trainer, onEdit: () -> Unit, onDelete: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(2.dp),
@@ -397,7 +468,7 @@ fun TrainerAdminCard(trainer: TrainerEntity, onEdit: () -> Unit, onDelete: () ->
 
 @SuppressLint("UnrememberedMutableState")
 @Composable
-fun TrainerEditDialog(trainer: TrainerEntity?, onDismiss: () -> Unit, onSave: (TrainerEntity, String?) -> Unit) {
+fun TrainerEditDialog(trainer: Trainer?, onDismiss: () -> Unit, onSave: (Trainer, String?) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val oldImageUri = trainer?.img
@@ -456,39 +527,41 @@ fun TrainerEditDialog(trainer: TrainerEntity?, onDismiss: () -> Unit, onSave: (T
                 OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },
-        confirmButton = { Button(onClick = { onSave(TrainerEntity(id = trainer?.id ?: 0, nombre = name.trim(), especialidad = especialidad.trim(), fono = fono.trim(), email = email.trim(), img = imgUriString.trim().ifBlank { null }), oldImageUri) }, enabled = isFormValid) { Text("Guardar") } },
+        confirmButton = { Button(onClick = { onSave(Trainer(id = trainer?.id ?: 0, nombre = name.trim(), especialidad = especialidad.trim(), fono = fono.trim(), email = email.trim(), img = imgUriString.trim().ifBlank { null }), oldImageUri) }, enabled = isFormValid) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )
 }
 
 
-// --- Pestaña de Usuarios (ACTUALIZADA) ---
+// --- Pestaña de Usuarios (ACTUALIZADA PARA BACKEND) ---
 
 @Composable
 fun AdminUsersTab() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val usersDao = remember { GymTasticDatabase.get(ctx).users() }
+    // Eliminar UsersDao, ahora usamos AuthRepository directo
     val authRepo = remember { ServiceLocator.auth(ctx) }
-    val authPrefs = remember { authRepo.prefs() }
 
-    val adminEmail by authPrefs.userEmailFlow.collectAsStateWithLifecycle("")
-
-    // Sincronizar usuarios al entrar a la pestaña
-    LaunchedEffect(Unit) {
-        authRepo.syncAllUsers()
-    }
-
-    val users by remember(adminEmail) {
-        if (adminEmail.isNotBlank()) {
-            usersDao.observeAllExcept(adminEmail)
-        } else {
-            flowOf(emptyList())
-        }
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Estado local para la lista de usuarios
+    var users by remember { mutableStateOf<List<UserProfileDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
 
     var showAddDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf<UserEntity?>(null) }
+    var showDeleteDialog by remember { mutableStateOf<UserProfileDto?>(null) }
+
+    // Función para refrescar la lista desde el Backend
+    fun refreshUsers() {
+        scope.launch {
+            isLoading = true
+            users = authRepo.getAllUsers() // Llamada directa a la API
+            isLoading = false
+        }
+    }
+
+    // Cargar usuarios al iniciar
+    LaunchedEffect(Unit) {
+        refreshUsers()
+    }
 
     // --- UI ---
     Scaffold(
@@ -501,16 +574,22 @@ fun AdminUsersTab() {
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 96.dp)
-        ) {
-            items(users, key = { it.email }) { user ->
-                UserAdminCard(
-                    user = user,
-                    onDelete = { showDeleteDialog = user }
-                )
+        if (isLoading && users.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 96.dp)
+            ) {
+                items(users, key = { it.email }) { user ->
+                    UserAdminCard(
+                        user = user,
+                        onDelete = { showDeleteDialog = user }
+                    )
+                }
             }
         }
     }
@@ -523,23 +602,20 @@ fun AdminUsersTab() {
                 scope.launch {
                     val normalizedEmail = email.trim().lowercase()
                     val normalizedName = name.trim()
-                    // Usamos AuthRepository para registrar (maneja hashing y chequeo de existencia)
+
+                    // 1. Registrar
                     val registerSuccess = authRepo.register(normalizedEmail, password, normalizedName)
+
                     if (registerSuccess) {
-                        // Si el rol elegido es diferente al por defecto ('user'), actualizamos
+                        // 2. Si el rol es distinto a 'user', actualizar
                         if (rol != "user") {
-                            val roleUpdated = authRepo.updateRole(normalizedEmail, rol)
-                            if (roleUpdated) {
-                                Toast.makeText(ctx, "Usuario $normalizedEmail creado con rol $rol", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(ctx, "Usuario creado, error al asignar rol", Toast.LENGTH_LONG).show()
-                            }
-                        } else {
-                            Toast.makeText(ctx, "Usuario $normalizedEmail creado", Toast.LENGTH_SHORT).show()
+                            authRepo.updateRole(normalizedEmail, rol)
                         }
+                        Toast.makeText(ctx, "Usuario creado", Toast.LENGTH_SHORT).show()
                         showAddDialog = false
+                        refreshUsers() // Recargar lista
                     } else {
-                        Toast.makeText(ctx, "El email $normalizedEmail ya existe", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "Error al crear usuario (¿Email existe?)", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -553,10 +629,10 @@ fun AdminUsersTab() {
             onDismiss = { showDeleteDialog = null },
             onConfirm = {
                 scope.launch {
-                    // Usamos AuthRepo para eliminar en API y Local
                     val success = authRepo.deleteUser(userToDelete.email)
                     if (success) {
-                        Toast.makeText(ctx, "Usuario ${userToDelete.email} eliminado", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "Usuario eliminado", Toast.LENGTH_SHORT).show()
+                        refreshUsers() // Recargar lista
                     } else {
                         Toast.makeText(ctx, "Error al eliminar usuario", Toast.LENGTH_SHORT).show()
                     }
@@ -569,7 +645,7 @@ fun AdminUsersTab() {
 
 @Composable
 fun UserAdminCard(
-    user: UserEntity,
+    user: UserProfileDto,
     onDelete: () -> Unit
 ) {
     Card(
@@ -592,7 +668,7 @@ fun UserAdminCard(
     }
 }
 
-// --- Diálogo Añadir Usuario (MODIFICADO con Roles) ---
+// --- Diálogo Añadir Usuario ---
 @SuppressLint("UnrememberedMutableState")
 @Composable
 fun UserAddDialog(

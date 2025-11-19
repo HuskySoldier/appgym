@@ -1,6 +1,5 @@
 package cl.gymtastic.app.ui.home
 
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,13 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -31,21 +24,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import cl.gymtastic.app.R
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import cl.gymtastic.app.data.local.entity.UserEntity
-import cl.gymtastic.app.data.local.entity.AttendanceEntity
-import cl.gymtastic.app.data.datastore.CheckCounts // Mantenemos la data class
-import kotlinx.coroutines.flow.flowOf
+import cl.gymtastic.app.data.datastore.CheckCounts
+import cl.gymtastic.app.data.model.Attendance // <-- Nuevo Modelo
+import cl.gymtastic.app.data.model.User       // <-- Nuevo Modelo
 import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.ui.navigation.Screen
 import cl.gymtastic.app.util.ServiceLocator
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.ceil // Import para ceil
+import kotlin.math.ceil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,73 +47,72 @@ fun HomeScreen(
     // --- Estado General y Contexto ---
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
 
-    // --- Repositorios y API ---
-    val productsRepo = remember { ServiceLocator.products(ctx) }
-    val trainersRepo = remember { ServiceLocator.trainers(ctx) }
+    // --- Repositorios (Solo los necesarios para esta pantalla) ---
+    val authRepo = remember { ServiceLocator.auth(ctx) }
     val attendanceRepo = remember { ServiceLocator.attendance(ctx) }
-    val bookingsRepo = remember { ServiceLocator.bookings(ctx) }
-
 
     // Ruta actual
     val currentRoute = nav.currentBackStackEntryFlow
         .collectAsState(initial = nav.currentBackStackEntry)
         .value?.destination?.route
 
-    // --- Sesión de Autenticación y Datos del Usuario ---
-    val session = remember { ServiceLocator.auth(ctx).prefs() }
+    // --- Sesión ---
+    val session = remember { authRepo.prefs() }
     val authEmail by session.userEmailFlow.collectAsStateWithLifecycle(initialValue = "")
 
-    // --- Obtener DAOs ---
-    val usersDao = remember { GymTasticDatabase.get(ctx).users() }
-
-    // --- Observar UserEntity (para estado del plan y rol) ---
-    val userEntity by remember(authEmail) {
-        if (authEmail.isNotBlank()) usersDao.observeByEmail(authEmail) else flowOf(null)
-    }.collectAsStateWithLifecycle(initialValue = null)
-    val hasPlan = userEntity?.hasActivePlan ?: false
-
-    // --- MODIFICADO: isAdmin ahora depende del rol en UserEntity ---
-    val isAdmin by remember(userEntity) {
-        // Usa derivedStateOf para asegurar que solo se recalcule si userEntity cambia
-        derivedStateOf { userEntity?.rol == "admin" }
-    }
-    // --- FIN MODIFICACIÓN ---
-
-    // --- Observar Lista de Asistencia desde Room ---
-    val attendanceList by remember(authEmail) {
+    // --- 1. Obtener Usuario desde API (Backend-Only) ---
+    val user by produceState<User?>(initialValue = null, key1 = authEmail) {
         if (authEmail.isNotBlank()) {
-            attendanceRepo.observe(authEmail) // Observa la lista de AttendanceEntity desde Room
-        } else {
-            flowOf(emptyList()) // Lista vacía si no hay email
-        }
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
-
-    // --- SINCRONIZACIÓN INICIAL DE DATOS AL ENTRAR EN HOME ---
-    LaunchedEffect(authEmail) {
-        if (authEmail.isNotBlank()) {
-            scope.launch {
-                // Iniciar refresco de datos en paralelo
-                productsRepo.refreshProductsFromApi()
-                trainersRepo.refreshTrainersFromApi()
-                attendanceRepo.syncHistoryFromApi(authEmail) // <-- Sincronizar historia de asistencia
-                bookingsRepo.refreshUserBookings(authEmail) // <-- Sincronizar reservas
+            // Obtenemos el DTO del repositorio
+            val dto = authRepo.getUserProfile(authEmail)
+            // Mapeamos DTO -> Modelo UI (User)
+            value = dto?.let {
+                User(
+                    email = it.email,
+                    nombre = it.nombre,
+                    rol = it.rol,
+                    planEndMillis = it.planEndMillis,
+                    sedeId = it.sedeId,
+                    sedeName = it.sedeName,
+                    sedeLat = it.sedeLat,
+                    sedeLng = it.sedeLng,
+                    avatarUri = it.avatarUri,
+                    fono = it.fono,
+                    bio = it.bio
+                )
             }
+        } else {
+            value = null
         }
     }
-    // --- FIN SINCRONIZACIÓN ---
 
-    // --- Calcular CheckCounts a partir de la lista de asistencia ---
+    // --- 2. Obtener Historial de Asistencia desde API ---
+    // Se recarga cuando cambia el email
+    val attendanceList by produceState<List<Attendance>>(initialValue = emptyList(), key1 = authEmail) {
+        if (authEmail.isNotBlank()) {
+            value = attendanceRepo.getHistory(authEmail)
+        } else {
+            value = emptyList()
+        }
+    }
+
+    // --- Lógica Derivada ---
+    val hasPlan = user?.hasActivePlan ?: false
+
+    // isAdmin depende de los datos frescos del usuario
+    val isAdmin = remember(user) {
+        user?.rol == "admin"
+    }
+
+    // --- Calcular CheckCounts ---
     val calculatedCounts by remember(attendanceList) {
-        derivedStateOf { // Se recalcula solo si attendanceList cambia
-            val totalIn = attendanceList.size // Cada registro es un check-in
-            // --- CORRECCIÓN: Tipo explícito ---
-            val totalOut = attendanceList.count { attendance: AttendanceEntity -> attendance.checkOutTimestamp != null }
-            val lastIn = attendanceList.firstOrNull() // El primero es el más reciente (ORDER BY DESC)
-            // --- CORRECCIÓN: Tipo explícito ---
-            val lastOut = attendanceList.firstOrNull { attendance: AttendanceEntity -> attendance.checkOutTimestamp != null }
+        derivedStateOf {
+            val totalIn = attendanceList.size
+            val totalOut = attendanceList.count { it.checkOutTimestamp != null }
+            val lastIn = attendanceList.firstOrNull() // El repo devuelve ordenado desc
+            val lastOut = attendanceList.firstOrNull { it.checkOutTimestamp != null }
 
             CheckCounts(
                 totalIn = totalIn,
@@ -133,30 +123,25 @@ fun HomeScreen(
         }
     }
 
-
-    val snackbar = remember { SnackbarHostState() }
-
     // --- Items del Drawer ---
-    // Define baseItems and gatedItems if they are not already defined globally or passed as parameters
     val baseItems = listOf(
         "Home" to Screen.Home.route,
         "Planes" to Screen.Planes.route,
         "Tienda" to Screen.Store.route,
         "Carrito" to Screen.Cart.route
     )
-    val gatedItems = listOf( // Items que requieren plan activo
+    val gatedItems = listOf(
         "Check-In" to Screen.CheckIn.route,
         "Trainers" to Screen.Trainers.route
     )
-    // Recalcula items basado en hasPlan (derivado de userEntity) y ruta actual
-    val drawerItems = remember(hasPlan, currentRoute) { // isAdmin ya no es necesario aquí
+
+    val drawerItems = remember(hasPlan, currentRoute) {
         buildList {
             val base = if (hasPlan) baseItems + gatedItems else baseItems
-            addAll(base.filter { (_, route) -> route != currentRoute }) // Use placeholder _ for unused label
+            addAll(base.filter { (_, route) -> route != currentRoute })
             add("Cerrar sesión" to "logout")
         }
     }
-
 
     // --- Lógica de Ancho ---
     val widthSizeClass = windowSizeClass.widthSizeClass
@@ -178,9 +163,8 @@ fun HomeScreen(
         ) {
             HomeScreenScaffold(
                 nav = nav,
-                userEntity = userEntity,
+                user = user, // Pasamos el modelo User
                 windowSizeClass = windowSizeClass,
-                // --- Pasamos isAdmin derivado ---
                 isAdmin = isAdmin,
                 checkCounts = calculatedCounts,
                 onOpenDrawer = { scope.launch { drawerState.open() } }
@@ -200,9 +184,8 @@ fun HomeScreen(
         ) {
             HomeScreenScaffold(
                 nav = nav,
-                userEntity = userEntity,
+                user = user, // Pasamos el modelo User
                 windowSizeClass = windowSizeClass,
-                // --- Pasamos isAdmin derivado ---
                 isAdmin = isAdmin,
                 checkCounts = calculatedCounts,
                 onOpenDrawer = null
@@ -265,15 +248,13 @@ private fun DrawerContent(nav: NavController, drawerItems: List<Pair<String, Str
     }
 }
 
-
-/** Scaffold principal (MODIFICADO para recibir isAdmin) */
+/** Scaffold principal */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreenScaffold(
     nav: NavController,
-    userEntity: UserEntity?,
+    user: User?,
     windowSizeClass: WindowSizeClass,
-    // --- Recibe isAdmin derivado ---
     isAdmin: Boolean,
     checkCounts: CheckCounts,
     onOpenDrawer: (() -> Unit)?
@@ -310,33 +291,27 @@ private fun HomeScreenScaffold(
         HomeContent(
             modifier = Modifier.padding(innerPadding),
             nav = nav,
-            userEntity = userEntity,
+            user = user,
             windowSizeClass = windowSizeClass,
-            // --- Pasa isAdmin derivado ---
             isAdmin = isAdmin,
             checkCounts = checkCounts
         )
     }
 }
 
-
-/** Contenido principal (MODIFICADO para recibir isAdmin) */
+/** Contenido principal */
 @Composable
 private fun HomeContent(
     modifier: Modifier = Modifier,
     nav: NavController,
-    userEntity: UserEntity?,
+    user: User?,
     windowSizeClass: WindowSizeClass,
-    // --- Recibe isAdmin derivado ---
     isAdmin: Boolean,
     checkCounts: CheckCounts
 ) {
     val cs = MaterialTheme.colorScheme
-    val hasPlan = userEntity?.hasActivePlan ?: false
-    val planEnd = userEntity?.planEndMillis
-
-    // --- ELIMINADO: Ya no calculamos isAdmin aquí, lo recibimos ---
-    // val isAdmin = authEmail.equals("admin@gymtastic.cl", ignoreCase = true)
+    val hasPlan = user?.hasActivePlan ?: false
+    val planEnd = user?.planEndMillis
 
     val widthSizeClass = windowSizeClass.widthSizeClass
     val isCompact = widthSizeClass == WindowWidthSizeClass.Compact
@@ -367,7 +342,8 @@ private fun HomeContent(
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.Start) {
-                    Text("Bienvenido a GymTastic 💪", style = MaterialTheme.typography.headlineMedium, color = cs.onSurface)
+                    val nombre = user?.nombre ?: "Usuario"
+                    Text("Bienvenido, $nombre 💪", style = MaterialTheme.typography.headlineMedium, color = cs.onSurface)
                     Spacer(Modifier.height(4.dp))
                     Text("Entrena y supera tus límites", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 }
@@ -411,7 +387,7 @@ private fun HomeContent(
                 )
             }
 
-            // 4. Botón de Panel de Administración (Usa el isAdmin recibido)
+            // 4. Botón de Panel de Administración
             AnimatedVisibility(visible = isAdmin) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Spacer(Modifier.height(24.dp))
@@ -432,13 +408,12 @@ private fun HomeContent(
                     }
                 }
             }
-
             Spacer(Modifier.height(16.dp))
         }
     }
 }
 
-// --- Componentes Internos (Sin cambios) ---
+// --- Componentes Reutilizables ---
 @Composable private fun SectionTitle(title: String) {
     Text(
         text = title,
@@ -448,6 +423,7 @@ private fun HomeContent(
         modifier = Modifier.padding(bottom = 10.dp, top = 8.dp)
     )
 }
+
 @Composable private fun ActionCard(modifier: Modifier = Modifier, title: String, icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Card(
@@ -473,6 +449,7 @@ private fun HomeContent(
         }
     }
 }
+
 @Composable private fun MembershipCard(hasPlan: Boolean, planEndMillis: Long?, onManagePlan: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val df = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
@@ -509,6 +486,7 @@ private fun HomeContent(
         }
     }
 }
+
 @Composable private fun CheckStatsCard(counts: CheckCounts, enabled: Boolean, onOpenHistory: () -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
     val df = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
@@ -529,19 +507,20 @@ private fun HomeContent(
             CompactStatBox(
                 title = "IN",
                 value = counts.totalIn.toString(),
-                subtitle = counts.lastInTs?.let { ts -> df.format(Date(ts)) } ?: "—", // Explicit lambda param name
+                subtitle = counts.lastInTs?.let { ts -> df.format(Date(ts)) } ?: "—",
                 icon = { Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = cs.primary) }
             )
             VerticalDivider(modifier = Modifier.height(30.dp).padding(horizontal = 8.dp), thickness = 1.dp, color = cs.outline.copy(alpha = 0.2f))
             CompactStatBox(
                 title = "OUT",
                 value = counts.totalOut.toString(),
-                subtitle = counts.lastOutTs?.let { ts -> df.format(Date(ts)) } ?: "—", // Explicit lambda param name
+                subtitle = counts.lastOutTs?.let { ts -> df.format(Date(ts)) } ?: "—",
                 icon = { Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = cs.onSurfaceVariant) }
             )
         }
     }
 }
+
 @Composable private fun CompactStatBox(title: String, value: String, subtitle: String, icon: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

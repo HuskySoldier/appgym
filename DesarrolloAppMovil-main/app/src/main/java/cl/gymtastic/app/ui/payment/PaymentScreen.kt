@@ -26,9 +26,9 @@ import androidx.datastore.core.IOException
 import androidx.navigation.NavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cl.gymtastic.app.R
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import kotlinx.coroutines.flow.flowOf
-import cl.gymtastic.app.data.local.InsufficientStockException
+// import cl.gymtastic.app.data.local.db.GymTasticDatabase // <-- ELIMINADO
+import cl.gymtastic.app.data.model.User // <-- NUEVO
+import cl.gymtastic.app.data.model.CartItem // <-- NUEVO
 import cl.gymtastic.app.data.local.SedesRepo
 import cl.gymtastic.app.ui.navigation.Screen
 import cl.gymtastic.app.util.ServiceLocator
@@ -37,7 +37,7 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit // <-- Importación necesaria para TimeUnit
+import java.util.concurrent.TimeUnit
 
 private fun daysFromNow(days: Int): Long {
     val now = System.currentTimeMillis()
@@ -48,53 +48,70 @@ private fun daysFromNow(days: Int): Long {
 @Composable
 fun PaymentScreen(
     nav: NavController,
-    windowSizeClass: WindowSizeClass // <-- Parámetro WSC
+    windowSizeClass: WindowSizeClass
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val cs = MaterialTheme.colorScheme
 
-    // --- Sesión y Usuario ---
-    val authPrefs = remember { ServiceLocator.auth(ctx).prefs() }
+    // --- Repositorios ---
+    val authRepo = remember { ServiceLocator.auth(ctx) }
+    val cartRepo = remember { ServiceLocator.cart(ctx) }
+    val productsRepo = remember { ServiceLocator.products(ctx) }
+
+    // --- Sesión ---
+    val authPrefs = remember { authRepo.prefs() }
     val authEmail by authPrefs.userEmailFlow.collectAsStateWithLifecycle(initialValue = "")
 
-    // --- Observar UserEntity desde DB ---
-    val usersDao = remember { GymTasticDatabase.get(ctx).users() }
-    val userEntity by remember(authEmail) {
+    // --- 1. Cargar Usuario (Desde API, Backend-Only) ---
+    val userEntity by produceState<User?>(initialValue = null, key1 = authEmail) {
         if (authEmail.isNotBlank()) {
-            usersDao.observeByEmail(authEmail)
+            val dto = authRepo.getUserProfile(authEmail)
+            value = dto?.let {
+                User(
+                    email = it.email,
+                    nombre = it.nombre,
+                    rol = it.rol,
+                    planEndMillis = it.planEndMillis,
+                    sedeId = it.sedeId,
+                    sedeName = it.sedeName,
+                    sedeLat = it.sedeLat,
+                    sedeLng = it.sedeLng,
+                    avatarUri = it.avatarUri,
+                    fono = it.fono,
+                    bio = it.bio
+                )
+            }
         } else {
-            flowOf(null)
+            value = null
         }
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }
+    // ---------------------------------------------------
 
-    val useGoogleMap = true // Configuración del mapa
+    val useGoogleMap = true
 
-    // --- MODIFICADO: Eliminado "Efectivo" ---
+    // Métodos de pago
     val metodos = listOf("Débito", "Crédito", "Transferencia")
     var metodo by remember { mutableStateOf(metodos.first()) }
     var metodoExpanded by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
 
-    // --- NUEVO: Estado para mostrar diálogo de transferencia ---
+    // Diálogo de transferencia
     var showTransferDialog by remember { mutableStateOf(false) }
 
-    // Carrito
-    val cartRepo = remember { ServiceLocator.cart(ctx) } // Obtener CartRepo
-    val cartFlow = remember { cartRepo.observeCart() } // Usar CartRepo para observar
-    val items by cartFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Carrito (En memoria)
+    val cartFlow = remember { cartRepo.observeCart() }
+    val items: List<CartItem> by cartFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val total = items.sumOf { it.qty * it.unitPrice }
 
-    // Repo de productos: types + names
-    val productsRepo = remember { ServiceLocator.products(ctx) }
+    // Tipos y Nombres de productos (Desde API/Repo)
     var types by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
     var names by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
 
     LaunchedEffect(items) {
-        // IDs need to be Long for repository functions
         val ids = items.map { it.productId }.distinct()
         if (ids.isNotEmpty()) {
-            // Assuming getTypesById and getNamesById now correctly handle Long lists
+            // Estos métodos del repo ya fueron actualizados para consultar la API
             types = productsRepo.getTypesById(ids)
             names = productsRepo.getNamesById(ids)
         } else {
@@ -109,7 +126,7 @@ fun PaymentScreen(
     }
     val totalMerch = total - totalPlans
 
-    // Calcular 'canBuy' basado en UserEntity
+    // Calcular 'canBuy' basado en el modelo User
     val thresholdDays = 3
     val canBuy by remember(userEntity) {
         derivedStateOf {
@@ -125,14 +142,14 @@ fun PaymentScreen(
         }
     }
 
-    // Sedes (solo si hay plan en carrito)
+    // Sedes (Estático en Sede.kt, no requiere cambios)
     val sedes = SedesRepo.sedes
     var sedeExpanded by remember { mutableStateOf(false) }
     var selectedIndex by remember { mutableStateOf(0) }
     val safeIndex = selectedIndex.coerceIn(0, (sedes.size - 1).coerceAtLeast(0))
     val sede = sedes.getOrNull(safeIndex)
     val sedeLatLng = remember(safeIndex) {
-        LatLng(sede?.lat ?: -33.45, sede?.lng ?: -70.67) // fallback STGO
+        LatLng(sede?.lat ?: -33.45, sede?.lng ?: -70.67)
     }
 
     // Mapa
@@ -173,14 +190,14 @@ fun PaymentScreen(
                 .background(bg)
                 .padding(padding)
                 .padding(16.dp),
-            contentAlignment = Alignment.Center // Centra la Card en tablets
+            contentAlignment = Alignment.Center
         ) {
             AnimatedVisibility(visible = true, enter = fadeIn(), exit = fadeOut()) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = cs.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                    modifier = cardWidthModifier // <-- Ancho adaptativo
-                        .verticalScroll(rememberScrollState()) // Scroll interno
+                    modifier = cardWidthModifier
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Column(
                         modifier = Modifier
@@ -190,7 +207,7 @@ fun PaymentScreen(
                     ) {
                         Text("Pago simulado", style = MaterialTheme.typography.headlineSmall)
 
-                        // Resumen + detalle de ítems
+                        // Resumen
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Items en carrito: ${items.size}", color = cs.onSurfaceVariant)
                             items.forEach { item ->
@@ -236,7 +253,6 @@ fun PaymentScreen(
                                         onClick = {
                                             metodo = m
                                             metodoExpanded = false
-                                            // --- NUEVO: Mostrar diálogo si es Transferencia ---
                                             if (m == "Transferencia") {
                                                 showTransferDialog = true
                                             }
@@ -246,7 +262,7 @@ fun PaymentScreen(
                             }
                         }
 
-                        // === Sede / Mapa solo si hay plan en carrito ===
+                        // === Sede / Mapa ===
                         if (hasPlanInCart) {
                             ExposedDropdownMenuBox(
                                 expanded = sedeExpanded,
@@ -328,24 +344,23 @@ fun PaymentScreen(
                                 onClick = {
                                     if (total <= 0 || loading || authEmail.isBlank()) return@Button
                                     loading = true
-                                    showBlocked = null // Limpiar error anterior
+                                    showBlocked = null
                                     scope.launch {
                                         try {
-                                            // 1. Llamar al Orquestador de Checkout
+                                            // Checkout usando el CartRepository (que ahora es backend-only)
                                             val (planActivated, message) = cartRepo.processCheckout(
                                                 userEmail = authEmail,
                                                 items = items,
                                                 sede = if (hasPlanInCart) sede else null
                                             )
 
-                                            // 2. Éxito: Navegar
+                                            // Éxito
                                             nav.navigate(Screen.PaymentSuccess.withPlan(planActivated)) {
                                                 launchSingleTop = true
                                                 popUpTo(Screen.Payment.route) { inclusive = true }
                                             }
 
                                         } catch (e: IOException) {
-                                            // Captura errores de stock, plan activo, o conexión
                                             showBlocked = e.message
                                         } catch (e: Exception) {
                                             showBlocked = "Ocurrió un error inesperado: ${e.message ?: "desconocido"}"
@@ -380,7 +395,7 @@ fun PaymentScreen(
         }
     }
 
-    // Diálogo de bloqueo
+    // Diálogo de bloqueo / error
     if (showBlocked != null) {
         AlertDialog(
             onDismissRequest = { showBlocked = null },
@@ -390,20 +405,18 @@ fun PaymentScreen(
         )
     }
 
-    // --- NUEVO: Diálogo de Transferencia ---
+    // Diálogo de Transferencia
     if (showTransferDialog) {
         TransferInfoDialog(onDismiss = { showTransferDialog = false })
     }
 }
 
-// --- NUEVO: Composable para el diálogo de Transferencia ---
 @Composable
 private fun TransferInfoDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Datos de Transferencia") },
         text = {
-            // Reemplaza con tus datos reales
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Banco: Banco Ejemplo")
                 Text("Tipo de Cuenta: Cuenta Corriente")

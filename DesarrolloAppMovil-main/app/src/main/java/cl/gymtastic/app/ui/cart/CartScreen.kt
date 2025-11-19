@@ -10,7 +10,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
-import androidx.compose.runtime.*
+import androidx.compose.runtime.* // Importa remember, mutableStateOf, LaunchedEffect
+import androidx.compose.runtime.getValue // <--- CORRECCIÓN: Import necesario para 'by'
+import androidx.compose.runtime.setValue // <--- CORRECCIÓN: Import necesario para 'by' var
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -19,55 +21,63 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import cl.gymtastic.app.data.local.entity.CartItemEntity
+import cl.gymtastic.app.data.model.CartItem
 import cl.gymtastic.app.ui.navigation.Screen
+import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.*
-import cl.gymtastic.app.util.ServiceLocator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartScreen(
     nav: NavController,
-    windowSizeClass: WindowSizeClass // <-- PARÁMETRO AÑADIDO
+    windowSizeClass: WindowSizeClass
 ) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // Fondo como el resto
     val bg = Brush.verticalGradient(
         listOf(cs.primary.copy(alpha = 0.22f), cs.surface)
     )
 
-    // Carrito
-    val cartFlow = remember { ServiceLocator.cart(ctx).observeCart() }
-    val items: List<CartItemEntity> by cartFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-
-    // Nombres de productos
+    // Obtenemos los repositorios
+    val cartRepo = remember { ServiceLocator.cart(ctx) }
     val productsRepo = remember { ServiceLocator.products(ctx) }
+
+    // Observamos el carrito
+    val cartFlow = remember(cartRepo) { cartRepo.observeCart() }
+    val items: List<CartItem> by cartFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Estado para nombres
     var names by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+
+    // Cargar nombres cuando cambian los items
     LaunchedEffect(items) {
         val ids = items.map { it.productId }.distinct()
-        names = productsRepo.getNamesById(ids) // ← ya implementado en tu repo/DAO
+        if (ids.isNotEmpty()) {
+            try {
+                // Ahora sí debería reconocer este método gracias a la corrección del ProductsRepository
+                names = productsRepo.getNamesById(ids)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     val money = remember {
         NumberFormat.getCurrencyInstance(Locale("es", "CL")).apply { maximumFractionDigits = 0 }
     }
+
     val total = items.sumOf { it.qty * it.unitPrice }
 
-    // Reacciona al tamaño de pantalla
+    // Layout
     val widthSizeClass = windowSizeClass.widthSizeClass
     val isCompact = widthSizeClass == WindowWidthSizeClass.Compact
-    val contentModifier = if (isCompact) {
-        Modifier.fillMaxSize()
-    } else {
-        Modifier.fillMaxSize().width(600.dp) // Ancho fijo para tablets
-    }
-    val horizontalPadding = if (isCompact) 16.dp else 0.dp // Sin padding lateral en tablets
+    val contentModifier = if (isCompact) Modifier.fillMaxSize() else Modifier.fillMaxSize().width(600.dp)
+    val horizontalPadding = if (isCompact) 16.dp else 0.dp
 
     Scaffold(
         topBar = {
@@ -82,7 +92,7 @@ fun CartScreen(
                     TextButton(
                         onClick = {
                             scope.launch {
-                                ServiceLocator.cart(ctx).clear()
+                                cartRepo.clear()
                                 Toast.makeText(ctx, "Carrito vacío", Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -104,29 +114,21 @@ fun CartScreen(
                 .fillMaxSize()
                 .background(bg)
                 .padding(padding)
-                // Padding vertical general, el horizontal se aplica dinámicamente
                 .padding(vertical = 16.dp, horizontal = horizontalPadding),
-            contentAlignment = Alignment.TopCenter // Centra el contenido en tablets
+            contentAlignment = Alignment.TopCenter
         ) {
             if (items.isEmpty()) {
-                // Estado vacío elegante
                 Column(
-                    modifier = contentModifier, // <-- APLICAMOS MODIFICADOR
+                    modifier = contentModifier,
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        "Tu carrito está vacío",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = cs.onSurfaceVariant
-                    )
+                    Text("Tu carrito está vacío", style = MaterialTheme.typography.titleMedium, color = cs.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { nav.navigate(Screen.Store.route) }) {
-                        Text("Ir a la Tienda")
-                    }
+                    Button(onClick = { nav.navigate(Screen.Store.route) }) { Text("Ir a la Tienda") }
                 }
             } else {
-                Column(modifier = contentModifier) { // <-- APLICAMOS MODIFICADOR
+                Column(modifier = contentModifier) {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -143,83 +145,38 @@ fun CartScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Contenido
-                                    Column(
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            nombre,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(nombre, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            "Cant: ${it.qty}  •  Unit: $unit",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = cs.onSurfaceVariant
-                                        )
+                                        Text("Cant: ${it.qty}  •  Unit: $unit", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                                         Spacer(Modifier.height(2.dp))
-                                        Text(
-                                            "Subtotal: $subtotal",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = cs.primary
-                                        )
+                                        Text("Subtotal: $subtotal", style = MaterialTheme.typography.bodyMedium, color = cs.primary)
                                     }
-
-                                    // Eliminar
-                                    IconButton(
-                                        onClick = {
-                                            scope.launch {
-                                                ServiceLocator.cart(ctx).remove(it)   // ⬅️ usa tu método existente
-                                                Toast
-                                                    .makeText(ctx, "Eliminado del carrito", Toast.LENGTH_SHORT)
-                                                    .show()
-                                            }
+                                    IconButton(onClick = {
+                                        scope.launch {
+                                            cartRepo.remove(it)
+                                            Toast.makeText(ctx, "Eliminado", Toast.LENGTH_SHORT).show()
                                         }
-                                    ) {
-                                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar")
-                                    }
-
+                                    }) { Icon(Icons.Filled.Delete, "Eliminar") }
                                 }
                             }
                         }
                     }
-
                     Spacer(Modifier.height(12.dp))
-
-                    // Total + acciones
                     ElevatedCard(
                         colors = CardDefaults.elevatedCardColors(containerColor = cs.surface),
                         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(16.dp)) {
-                            Text(
-                                "Total: ${money.format(total)}",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = cs.primary
-                            )
+                            Text("Total: ${money.format(total)}", style = MaterialTheme.typography.titleLarge, color = cs.primary)
                             Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { nav.navigate(Screen.Home.route) },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("Home") }
-
-                                Button(
-                                    onClick = { nav.navigate(Screen.Payment.route) },
-                                    enabled = total > 0,
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("Pagar") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                OutlinedButton(onClick = { nav.navigate(Screen.Home.route) }, modifier = Modifier.weight(1f)) { Text("Home") }
+                                Button(onClick = { nav.navigate(Screen.Payment.route) }, enabled = total > 0, modifier = Modifier.weight(1f)) { Text("Pagar") }
                             }
                         }
                     }

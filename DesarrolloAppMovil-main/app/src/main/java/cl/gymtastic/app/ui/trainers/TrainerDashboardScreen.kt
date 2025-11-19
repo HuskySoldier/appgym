@@ -18,11 +18,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
+import cl.gymtastic.app.data.model.Trainer // <-- Importar Modelo
 import cl.gymtastic.app.data.remote.BookingRequest
 import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.util.ServiceLocator
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -42,10 +41,13 @@ fun TrainerDashboardScreen(nav: NavController) {
     val trainersRepo = remember { ServiceLocator.trainers(ctx) }
     val bookingsRepo = remember { ServiceLocator.bookings(ctx) }
 
-    // 1. Buscar si el email logueado corresponde a un Trainer en la BD local
-    val trainersFlow = remember { trainersRepo.observeAll() }
-    val allTrainers by trainersFlow.collectAsStateWithLifecycle(emptyList())
+    // 1. Buscar si el email logueado corresponde a un Trainer (Desde API)
+    // Reemplazamos observeAll() (Room) por getTrainers() (API)
+    val allTrainers by produceState<List<Trainer>>(initialValue = emptyList()) {
+        value = trainersRepo.getTrainers()
+    }
 
+    // Calculamos el trainer actual buscando por email en la lista cargada
     val currentTrainer = remember(allTrainers, authEmail) {
         allTrainers.find { it.email.equals(authEmail, ignoreCase = true) }
     }
@@ -57,6 +59,7 @@ fun TrainerDashboardScreen(nav: NavController) {
     LaunchedEffect(currentTrainer) {
         if (currentTrainer != null) {
             loading = true
+            // getTrainerSchedule ya fue actualizado para consultar la API
             schedule = bookingsRepo.getTrainerSchedule(currentTrainer.id)
             loading = false
         }
@@ -96,10 +99,25 @@ fun TrainerDashboardScreen(nav: NavController) {
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            if (currentTrainer == null) {
-                // Caso raro: Usuario tiene rol trainer pero no está en la tabla trainers
+            if (authEmail.isBlank()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No se encontró información de perfil de entrenador para $authEmail")
+                    CircularProgressIndicator()
+                }
+            } else if (currentTrainer == null) {
+                // Si ya cargaron los trainers y no se encontró el email
+                if (allTrainers.isNotEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "No se encontró perfil de entrenador para $authEmail.\n" +
+                                    "Asegúrate de estar registrado como trainer en el sistema.",
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    // Cargando lista de trainers...
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 }
             } else if (loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -129,7 +147,9 @@ fun TrainerDashboardScreen(nav: NavController) {
 fun BookingCard(booking: BookingRequest) {
     val cs = MaterialTheme.colorScheme
     val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-    val dateStr = dateFormat.format(Date(booking.fechaHora))
+    val dateStr = try {
+        dateFormat.format(Date(booking.fechaHora))
+    } catch (e: Exception) { "Fecha inválida" }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = cs.surface),

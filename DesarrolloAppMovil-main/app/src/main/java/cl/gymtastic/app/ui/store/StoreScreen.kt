@@ -14,7 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue // <--- IMPORTANTE
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -24,9 +24,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import cl.gymtastic.app.data.local.entity.ProductEntity
+import cl.gymtastic.app.data.model.Product // <-- CAMBIO: Usar el Modelo
 import cl.gymtastic.app.ui.navigation.Screen
-import cl.gymtastic.app.util.ServiceLocator // <--- IMPORTANTE
+import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
@@ -47,14 +47,21 @@ fun StoreScreen(
 
     val bg = Brush.verticalGradient(listOf(cs.primary.copy(alpha = 0.22f), cs.surface))
 
-    // Ahora ServiceLocator se resolverá correctamente
-    val merchFlow = remember { ServiceLocator.products(ctx).observeMerch() }
-    val merch by merchFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Repositorio de productos
+    val productsRepo = remember { ServiceLocator.products(ctx) }
+    val merchFlow = remember { productsRepo.observeMerch() }
 
+    // Lista de productos (Modelo Product)
+    val merch: List<Product> by merchFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Mapa de stock actualizado
     val stockMap by produceState(initialValue = emptyMap<Long, Int>(), merch) {
         val ids = merch.map { it.id.toLong() }
-        val stocks = ServiceLocator.products(ctx).getStockByIds(ids)
-        value = stocks.associate { (it.id.toLong() to it.stock) as Pair<Long, Int> }
+        if (ids.isNotEmpty()) {
+            // getStockByIds ahora devuelve List<Pair<Long, Int>> desde la API (o filtrado de getAll)
+            val stocks = productsRepo.getStockByIds(ids)
+            value = stocks.toMap()
+        }
     }
 
     val money = remember { NumberFormat.getCurrencyInstance(Locale("es", "CL")).apply { maximumFractionDigits = 0 } }
@@ -75,13 +82,15 @@ fun StoreScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().background(bg).padding(innerPadding).padding(16.dp)) {
             if (merch.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Aún no hay productos disponibles", color = cs.onSurfaceVariant) }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // Mensaje de carga o vacío
+                    Text("Cargando productos...", color = cs.onSurfaceVariant)
+                }
             } else {
                 LazyVerticalGrid(columns = gridColumns, verticalArrangement = Arrangement.spacedBy(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
-                    // Aquí 'it' es ProductEntity, por lo que 'it.id' funciona
                     items(merch, key = { it.id }) { p ->
                         val stock = stockMap[p.id.toLong()] ?: p.stock
-                        val canAdd = (stock ?: Int.MAX_VALUE) > 0
+                        val canAdd = (stock ?: 0) > 0
 
                         ProductCard(
                             product = p,
@@ -90,7 +99,7 @@ fun StoreScreen(
                             onAdd = {
                                 scope.launch {
                                     val currentQty = ServiceLocator.cart(ctx).getQtyFor(p.id.toLong())
-                                    val max = (stock ?: Int.MAX_VALUE)
+                                    val max = (stock ?: 0)
                                     if (currentQty + 1 > max) {
                                         Toast.makeText(ctx, "No hay más stock disponible", Toast.LENGTH_SHORT).show()
                                         return@launch
@@ -109,7 +118,13 @@ fun StoreScreen(
 }
 
 @Composable
-private fun ProductCard(product: ProductEntity, priceText: String, stock: Int?, onAdd: () -> Unit, enabled: Boolean) {
+private fun ProductCard(
+    product: Product, // <-- CAMBIO: Usar Product
+    priceText: String,
+    stock: Int?,
+    onAdd: () -> Unit,
+    enabled: Boolean
+) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     ElevatedCard(elevation = CardDefaults.elevatedCardElevation(6.dp), colors = CardDefaults.elevatedCardColors(containerColor = cs.surface), modifier = Modifier.fillMaxWidth()) {

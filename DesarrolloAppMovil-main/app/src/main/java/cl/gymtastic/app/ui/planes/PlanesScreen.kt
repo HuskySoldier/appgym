@@ -1,7 +1,5 @@
 package cl.gymtastic.app.ui.planes
 
-import cl.gymtastic.app.util.ServiceLocator
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,11 +20,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import cl.gymtastic.app.data.local.db.GymTasticDatabase
-import kotlinx.coroutines.flow.flowOf
-// ---
-import cl.gymtastic.app.data.local.entity.ProductEntity
+import cl.gymtastic.app.data.model.Product // <-- Nuevo Modelo
+import cl.gymtastic.app.data.model.User    // <-- Nuevo Modelo
 import cl.gymtastic.app.ui.navigation.Screen
+import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
@@ -41,26 +38,45 @@ fun PlanesScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // --- Sesión y Usuario ---
-    val authPrefs = remember { ServiceLocator.auth(ctx).prefs() }
+    // --- Sesión y Repositorios ---
+    val authRepo = remember { ServiceLocator.auth(ctx) }
+    val productsRepo = remember { ServiceLocator.products(ctx) }
+
+    val authPrefs = remember { authRepo.prefs() }
     val authEmail by authPrefs.userEmailFlow.collectAsStateWithLifecycle(initialValue = "")
 
-    // ---  PASO 1: Observar UserEntity desde DB ---
-    val usersDao = remember { GymTasticDatabase.get(ctx).users() }
-    val userEntity by remember(authEmail) {
+    // --- PASO 1: Cargar Usuario desde API (Backend-Only) ---
+    // Reemplaza al DAO observable
+    val userEntity by produceState<User?>(initialValue = null, key1 = authEmail) {
         if (authEmail.isNotBlank()) {
-            usersDao.observeByEmail(authEmail)
+            val dto = authRepo.getUserProfile(authEmail)
+            value = dto?.let {
+                User(
+                    email = it.email,
+                    nombre = it.nombre,
+                    rol = it.rol,
+                    planEndMillis = it.planEndMillis,
+                    sedeId = it.sedeId,
+                    sedeName = it.sedeName,
+                    sedeLat = it.sedeLat,
+                    sedeLng = it.sedeLng,
+                    avatarUri = it.avatarUri,
+                    fono = it.fono,
+                    bio = it.bio
+                )
+            }
         } else {
-            flowOf(null) // Flow nulo si no hay login
+            value = null
         }
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }
 
-    // Flujo de Planes (Productos tipo 'plan')
-    val planesFlow = remember { ServiceLocator.products(ctx).observePlanes() }
-    val planes by planesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // --- Flujo de Planes (Backend -> Repo -> Flow) ---
+    // El repositorio ya fue refactorizado para obtener esto de la API
+    val planesFlow = remember { productsRepo.observePlanes() }
+    val planes: List<Product> by planesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // ---  PASO 2: Calcular días restantes y 'canBuy' desde UserEntity ---
-    val thresholdDays = 3 // Días antes de expirar para poder renovar
+    // --- PASO 2: Calcular días restantes y 'canBuy' ---
+    val thresholdDays = 3
     val remainingDays: Long? = remember(userEntity) {
         userEntity?.planEndMillis?.let { end ->
             val diff = end - System.currentTimeMillis()
@@ -70,22 +86,19 @@ fun PlanesScreen(
 
     val canBuy by remember(userEntity) {
         derivedStateOf {
-            val ue = userEntity // Captura el valor actual
+            val ue = userEntity
             if (ue == null) {
                 false // No puede comprar sin usuario
             } else if (!ue.hasActivePlan) {
                 true // Puede comprar si no tiene plan activo
             } else {
                 // Si tiene plan activo, verifica si quedan pocos días
-                remainingDays?.let { days -> days <= thresholdDays } ?: true // Si no hay remainingDays (error?), permite comprar por si acaso
+                remainingDays?.let { days -> days <= thresholdDays } ?: true
             }
         }
     }
 
-
     val bg = Brush.verticalGradient(listOf(cs.primary.copy(alpha = 0.20f), cs.surface))
-
-    // Reacciona al tamaño de pantalla
     val widthSizeClass = windowSizeClass.widthSizeClass
 
     Scaffold(
@@ -116,7 +129,7 @@ fun PlanesScreen(
             Text("Elige tu plan", style = MaterialTheme.typography.titleMedium, color = cs.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
 
-            // --- ️ PASO 3: Mostrar advertencia si hay plan activo y no puede renovar ---
+            // --- Mostrar advertencia si hay plan activo y no puede renovar ---
             if (userEntity?.hasActivePlan == true && !canBuy) {
                 ElevatedCard(
                     colors = CardDefaults.elevatedCardColors(containerColor = cs.surfaceVariant),
@@ -136,7 +149,7 @@ fun PlanesScreen(
                 }
             }
 
-            // --- LAYOUT ADAPTATIVO (sin cambios aquí, ya usa 'canBuy' correctamente) ---
+            // --- LAYOUT ADAPTATIVO ---
             if (widthSizeClass == WindowWidthSizeClass.Compact) {
                 // --- Layout Compacto (Teléfono) ---
                 LazyColumn(
@@ -144,7 +157,7 @@ fun PlanesScreen(
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     items(planes.size) { idx ->
-                        val p: ProductEntity = planes[idx]
+                        val p = planes[idx]
                         val unitPrice = p.precio.toInt()
 
                         PlanCardContent(
@@ -179,10 +192,10 @@ fun PlanesScreen(
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     items(planes.size) { idx ->
-                        val p: ProductEntity = planes[idx]
+                        val p = planes[idx]
                         val unitPrice = p.precio.toInt()
 
-                        PlanCardContent( // Usamos el mismo Composable interno
+                        PlanCardContent(
                             product = p,
                             unitPrice = unitPrice,
                             canBuy = canBuy,
@@ -210,10 +223,10 @@ fun PlanesScreen(
     }
 }
 
-/** Composable interno para el contenido de la tarjeta del plan (reutilizable) */
+/** Composable interno para el contenido de la tarjeta del plan */
 @Composable
 private fun PlanCardContent(
-    product: ProductEntity,
+    product: Product, // <-- AHORA USA EL MODELO PRODUCT
     unitPrice: Int,
     canBuy: Boolean,
     remainingDays: Long?,
@@ -260,7 +273,7 @@ private fun PlanCardContent(
                         }
                         onAddToCart()
                     },
-                    enabled = canBuy, // Habilitado según la lógica general
+                    enabled = canBuy,
                     modifier = Modifier.weight(1f)
                 ) { Text("Agregar") }
 
@@ -272,11 +285,10 @@ private fun PlanCardContent(
                         }
                         onBuyNow()
                     },
-                    enabled = canBuy, // Habilitado según la lógica general
+                    enabled = canBuy,
                     modifier = Modifier.weight(1f)
                 ) { Text("Contratar") }
             }
         }
     }
 }
-
