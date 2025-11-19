@@ -1,10 +1,7 @@
 package cl.gymtastic.app.data.remote
 
 import cl.gymtastic.app.data.local.Sede
-import cl.gymtastic.app.data.local.entity.ProductEntity
-import cl.gymtastic.app.data.local.entity.TrainerEntity
-import retrofit2.Response
-import retrofit2.http.*
+
 
 // ====================================================================
 // 1. DTOs (Data Transfer Objects)
