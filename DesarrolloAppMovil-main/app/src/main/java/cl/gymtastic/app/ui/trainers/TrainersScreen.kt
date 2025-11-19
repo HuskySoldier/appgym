@@ -32,6 +32,7 @@ import cl.gymtastic.app.data.local.entity.TrainerEntity
 import cl.gymtastic.app.ui.navigation.Screen
 import coil.compose.SubcomposeAsyncImage // <-- Importado
 import coil.compose.SubcomposeAsyncImageContent // <-- Importado
+import cl.gymtastic.app.util.ServiceLocator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

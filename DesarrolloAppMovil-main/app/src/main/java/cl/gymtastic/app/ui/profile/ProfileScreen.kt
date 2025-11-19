@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.flowOf // <-- Importar flowOf
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.withContext // <-- Importar withContext
+import cl.gymtastic.app.util.ServiceLocator
 
 @SuppressLint("UnrememberedMutableState")
 @OptIn(ExperimentalMaterial3Api::class)

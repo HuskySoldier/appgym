@@ -138,6 +138,21 @@ class AuthRepository(private val context: Context) {
         } catch (e: Exception) { false }
     }
 
+    suspend fun confirmPasswordReset(email: String, token: String, newPass: String): Boolean {
+        return try {
+            val response = api.confirmReset(
+                ResetPasswordRequestDto(
+                    email = normEmail(email),
+                    token = token,
+                    newPassword = newPass
+                )
+            )
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // Helpers privados
     private suspend fun syncUserToRoom(dto: UserProfileDto) {
         val userEntity = UserEntity(

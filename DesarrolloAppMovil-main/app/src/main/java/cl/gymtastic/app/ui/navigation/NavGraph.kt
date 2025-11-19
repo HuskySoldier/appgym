@@ -12,6 +12,7 @@ import com.google.accompanist.navigation.animation.AnimatedNavHost
 import com.google.accompanist.navigation.animation.composable
 import com.google.accompanist.navigation.animation.rememberAnimatedNavController
 
+
 // ===== Rutas (Opción A: todo hijo directo del NavHost raíz) =====
 sealed class Screen(val route: String) {
     data object Login    : Screen("login")

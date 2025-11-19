@@ -1,5 +1,6 @@
 package cl.gymtastic.app.ui.auth
 
+import cl.gymtastic.app.util.ServiceLocator
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -193,6 +194,22 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth(0.94f)
                     )
                     Spacer(Modifier.height(8.dp))
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth(0.94f),
+                        contentAlignment = Alignment.CenterEnd // Alineado a la derecha
+                    ) {
+                        TextButton(onClick = { nav.navigate(NavRoutes.FORGOT_PASSWORD) }) {
+                            Text(
+                                "¿Olvidaste tu contraseña?",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = cs.primary
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+
 
                     // --- Mensaje de Error (Credenciales Inválidas) ---
                     AnimatedVisibility(visible = vm.error != null) { // Aparece si vm.error no es null

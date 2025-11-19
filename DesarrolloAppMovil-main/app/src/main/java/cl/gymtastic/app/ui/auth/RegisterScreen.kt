@@ -1,5 +1,6 @@
 package cl.gymtastic.app.ui.auth
 
+import cl.gymtastic.app.util.ServiceLocator
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
