@@ -605,7 +605,7 @@ fun UserAddDialog(
     var passwordVisible by remember { mutableStateOf(false) }
 
     // Estado para seleccionar rol
-    val roles = listOf("user", "admin")
+    val roles = listOf("user", "admin", "trainer")
     var selectedRol by remember { mutableStateOf(roles[0]) }
 
     val isFormValid by derivedStateOf {

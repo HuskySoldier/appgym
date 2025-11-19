@@ -97,4 +97,7 @@ interface GymTasticApi {
 
     @GET("$BASE_IP:8088/bookings/user/{email}")
     suspend fun getUserBookings(@Path("email") email: String): Response<List<BookingRequest>>
+
+    @GET("$BASE_IP:8088/bookings/trainer/{id}")
+    suspend fun getTrainerBookings(@Path("id") trainerId: Long): Response<List<BookingRequest>>
 }

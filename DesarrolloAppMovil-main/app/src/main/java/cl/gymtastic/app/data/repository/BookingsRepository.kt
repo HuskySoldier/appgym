@@ -87,4 +87,18 @@ class BookingsRepository(context: Context) {
         syncUserBookings(userEmail)
     }
 
+    suspend fun getTrainerSchedule(trainerId: Long): List<BookingRequest> {
+        return try {
+            val response = api.getTrainerBookings(trainerId)
+            if (response.isSuccessful) {
+                response.body() ?: emptyList()
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e("BookingsRepo", "Error fetching trainer schedule", e)
+            emptyList()
+        }
+    }
+
 }

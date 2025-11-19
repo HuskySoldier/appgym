@@ -119,12 +119,13 @@ fun RegisterScreen(
     // Validaciones “en vivo”
     // -----------------------------
     val isEmailValid by derivedStateOf {
-        email.contains("@") && email.contains(".") && email.length >= 6
+        email.isNotBlank() && android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
     }
     val isNameValid by derivedStateOf { name.trim().length >= 2 }
     val passStrength by derivedStateOf { calcPasswordStrength(pass) } // 0..4
     val isPassValid by derivedStateOf { pass.length >= 6 }
     val passwordsMatch by derivedStateOf { pass.isNotEmpty() && pass == pass2 }
+    
 
     // Botón habilitado solo si todo ok
     val canSubmit by derivedStateOf {

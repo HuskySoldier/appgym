@@ -26,6 +26,8 @@ sealed class Screen(val route: String) {
     data object Trainers : Screen("trainers")
     data object Profile  : Screen("profile")
 
+    data object TrainerDashboard : Screen("trainer_dashboard")
+
     data object Admin : Screen("admin")
     data object ForgotPassword : Screen("forgot_password")
 
@@ -225,6 +227,14 @@ fun NavGraph(
             popExitTransition = { exitRight() }
         ) {
             cl.gymtastic.app.ui.auth.ForgotPasswordScreen(navController)
+        }
+
+        composable(
+            route = Screen.TrainerDashboard.route,
+            enterTransition = { enterRight() },
+            exitTransition = { exitLeft() }
+        ) {
+            cl.gymtastic.app.ui.trainers.TrainerDashboardScreen(navController)
         }
     }
 

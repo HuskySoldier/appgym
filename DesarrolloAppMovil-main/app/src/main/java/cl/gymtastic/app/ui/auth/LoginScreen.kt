@@ -48,6 +48,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import cl.gymtastic.app.data.repository.AuthRepository // Importa AuthRepository si ViewModel lo necesita
 import cl.gymtastic.app.ui.navigation.NavRoutes // Asegúrate que NavRoutes esté definido
+import cl.gymtastic.app.ui.navigation.Screen
 import kotlinx.coroutines.launch
 
 // -----------------------------
@@ -111,6 +112,7 @@ fun LoginScreen(
     var email by rememberSaveable { mutableStateOf("admin@gymtastic.cl") } // Valor inicial para pruebas
     var pass by rememberSaveable { mutableStateOf("admin123") } // Valor inicial para pruebas
     var passVisible by rememberSaveable { mutableStateOf(false) } // Estado para mostrar/ocultar contraseña
+    val scope = rememberCoroutineScope()
 
     val keyboard = LocalSoftwareKeyboardController.current // Controlador para ocultar teclado
 
@@ -140,11 +142,34 @@ fun LoginScreen(
     val isPassValid by derivedStateOf { pass.length >= 6 }
 
     // --- Función de Acción ---
+    // --- Función de Acción CORREGIDA ---
     fun doLogin() {
-        keyboard?.hide() // Oculta teclado
-        vm.login(ctx, email, pass) { // Llama al ViewModel
-            nav.navigate(NavRoutes.HOME) { // Navega a Home si éxito
-                popUpTo(NavRoutes.LOGIN) { inclusive = true }; launchSingleTop = true
+        keyboard?.hide()
+        // Usamos 'email' directamente del estado del formulario
+        val currentEmail = email.trim().lowercase()
+
+        vm.login(ctx, currentEmail, pass) {
+            // ÉXITO (Callback del ViewModel)
+
+            // Usamos el 'scope' que declaramos arriba
+            scope.launch {
+                // Consultamos la DB directo con el email del formulario
+                val dao = ServiceLocator.db(ctx).users()
+                val entity = dao.findByEmail(currentEmail) // Esto es una función suspendida, por eso requiere scope.launch
+
+                if (entity?.rol == "trainer") {
+                    // Redirigir a Dashboard de Trainer
+                    nav.navigate(Screen.TrainerDashboard.route) {
+                        popUpTo(NavRoutes.LOGIN) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                } else {
+                    // Redirigir a Home normal (User o Admin)
+                    nav.navigate(NavRoutes.HOME) {
+                        popUpTo(NavRoutes.LOGIN) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
             }
         }
     }
