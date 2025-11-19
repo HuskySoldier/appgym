@@ -125,7 +125,7 @@ fun RegisterScreen(
     val passStrength by derivedStateOf { calcPasswordStrength(pass) } // 0..4
     val isPassValid by derivedStateOf { pass.length >= 6 }
     val passwordsMatch by derivedStateOf { pass.isNotEmpty() && pass == pass2 }
-    
+
 
     // Botón habilitado solo si todo ok
     val canSubmit by derivedStateOf {
