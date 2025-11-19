@@ -7,24 +7,26 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import cl.gymtastic.app.data.model.Product // <-- CAMBIO: Usar el Modelo
+import cl.gymtastic.app.data.model.Product
 import cl.gymtastic.app.ui.navigation.Screen
 import cl.gymtastic.app.util.ServiceLocator
 import coil.compose.SubcomposeAsyncImage
@@ -58,7 +60,6 @@ fun StoreScreen(
     val stockMap by produceState(initialValue = emptyMap<Long, Int>(), merch) {
         val ids = merch.map { it.id.toLong() }
         if (ids.isNotEmpty()) {
-            // getStockByIds ahora devuelve List<Pair<Long, Int>> desde la API (o filtrado de getAll)
             val stocks = productsRepo.getStockByIds(ids)
             value = stocks.toMap()
         }
@@ -83,7 +84,6 @@ fun StoreScreen(
         Box(modifier = Modifier.fillMaxSize().background(bg).padding(innerPadding).padding(16.dp)) {
             if (merch.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    // Mensaje de carga o vacío
                     Text("Cargando productos...", color = cs.onSurfaceVariant)
                 }
             } else {
@@ -96,16 +96,21 @@ fun StoreScreen(
                             product = p,
                             priceText = money.format(p.precio),
                             stock = stock,
-                            onAdd = {
+                            // --- AHORA RECIBE LA CANTIDAD ---
+                            onAdd = { qtyToAdd ->
                                 scope.launch {
                                     val currentQty = ServiceLocator.cart(ctx).getQtyFor(p.id.toLong())
                                     val max = (stock ?: 0)
-                                    if (currentQty + 1 > max) {
-                                        Toast.makeText(ctx, "No hay más stock disponible", Toast.LENGTH_SHORT).show()
+
+                                    // Validamos: (lo que tengo en carro + lo que quiero agregar) <= stock total
+                                    if (currentQty + qtyToAdd > max) {
+                                        val available = (max - currentQty).coerceAtLeast(0)
+                                        Toast.makeText(ctx, "Stock insuficiente. Solo puedes llevar $available más.", Toast.LENGTH_SHORT).show()
                                         return@launch
                                     }
-                                    ServiceLocator.cart(ctx).add(p.id.toLong(), 1, p.precio.toInt())
-                                    Toast.makeText(ctx, "\"${p.nombre}\" agregado", Toast.LENGTH_SHORT).show()
+
+                                    ServiceLocator.cart(ctx).add(p.id.toLong(), qtyToAdd, p.precio.toInt())
+                                    Toast.makeText(ctx, "Agregado: $qtyToAdd x \"${p.nombre}\"", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             enabled = canAdd
@@ -119,23 +124,26 @@ fun StoreScreen(
 
 @Composable
 private fun ProductCard(
-    product: Product, // <-- CAMBIO: Usar Product
+    product: Product,
     priceText: String,
     stock: Int?,
-    onAdd: () -> Unit,
+    onAdd: (Int) -> Unit, // <-- Cambiado para recibir la cantidad
     enabled: Boolean
 ) {
     val cs = MaterialTheme.colorScheme
-    val ctx = LocalContext.current
+
+    // Estado local para el contador de cantidad
+    var quantity by remember { mutableIntStateOf(1) }
+
     ElevatedCard(elevation = CardDefaults.elevatedCardElevation(6.dp), colors = CardDefaults.elevatedCardColors(containerColor = cs.surface), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(0.dp)) {
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(ctx).data(product.img).crossfade(true).build(),
+                model = ImageRequest.Builder(LocalContext.current).data(product.img).crossfade(true).build(),
                 contentDescription = product.nombre,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().height(120.dp),
                 loading = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(strokeWidth = 2.dp) } },
-                error = { Box(Modifier.fillMaxSize().background(cs.surfaceVariant), contentAlignment = Alignment.Center) { Icon(Icons.Default.Category, null, tint = cs.onSurfaceVariant.copy(0.5f)) } },
+                error = { Box(Modifier.fillMaxSize().background(cs.surfaceVariant), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Category, null, tint = cs.onSurfaceVariant.copy(0.5f)) } },
                 success = { SubcomposeAsyncImageContent() }
             )
             Column(Modifier.padding(14.dp)) {
@@ -143,8 +151,56 @@ private fun ProductCard(
                 Spacer(Modifier.height(4.dp))
                 if (stock != null) { AssistChip(onClick = {}, label = { Text("Stock: $stock") }); Spacer(Modifier.height(6.dp)) }
                 Text(priceText, style = MaterialTheme.typography.titleLarge, color = cs.primary)
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = onAdd, modifier = Modifier.fillMaxWidth(), enabled = enabled) { Text(if (enabled) "Agregar al carrito" else "Sin stock") }
+                Spacer(Modifier.height(12.dp))
+
+                // --- SELECTOR DE CANTIDAD ---
+                if (enabled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledIconButton(
+                            onClick = { if (quantity > 1) quantity-- },
+                            modifier = Modifier.size(32.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = cs.surfaceVariant)
+                        ) {
+                            Icon(Icons.Filled.Remove, null)
+                        }
+
+                        Text(
+                            text = quantity.toString(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+
+                        FilledIconButton(
+                            onClick = {
+                                // Limitamos el contador al stock disponible (o 99 si no hay límite estricto)
+                                val max = stock ?: 99
+                                if (quantity < max) quantity++
+                            },
+                            modifier = Modifier.size(32.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = cs.primaryContainer)
+                        ) {
+                            Icon(Icons.Filled.Add, null)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                // Botón Agregar
+                Button(
+                    onClick = {
+                        onAdd(quantity)
+                        quantity = 1 // Resetear contador
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = enabled
+                ) {
+                    Text(if (enabled) "Agregar al carrito" else "Sin stock")
+                }
             }
         }
     }
