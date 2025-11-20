@@ -66,7 +66,8 @@ dependencies {
     implementation 'androidx.compose.material3.adaptive:adaptive:1.1.0'
     implementation 'androidx.compose.material3:material3-window-size-class:1.4.0'
     implementation 'androidx.compose.animation:animation:1.9.4'
-    androidTestImplementation 'org.testng:testng:6.9.6'
+    implementation 'androidx.navigation:navigation-testing:2.9.6'
+
 
     // Compose BOM
     def compose_bom = platform('androidx.compose:compose-bom:2024.12.01')
@@ -120,4 +121,10 @@ dependencies {
 
     // Kotlin Test (Aserciones y utilidades extra, opcional pero útil)
     testImplementation "org.jetbrains.kotlin:kotlin-test:1.9.25"
+
+    // --- Dependencias para UI Tests (AndroidTest) ---
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+    androidTestImplementation platform('androidx.compose:compose-bom:2024.12.01') // Asegúrate que coincida con tu BOM
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
 }

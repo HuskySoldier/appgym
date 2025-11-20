@@ -22,7 +22,8 @@ import cl.gymtastic.app.ui.navigation.Screen
 import cl.gymtastic.app.ui.theme.GymTasticTheme
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
-
+//./gradlew testDebugUnitTest; if ($?) { Start-Process "app\build\reports\tests\testDebugUnitTest\index.html" }
+//.\gradlew.bat connectedDebugAndroidTest
 class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3AdaptiveApi::class, ExperimentalMaterial3WindowSizeClassApi::class)
