@@ -20,7 +20,6 @@ import androidx.navigation.NavController
 import cl.gymtastic.app.data.remote.OrderDto
 import cl.gymtastic.app.util.ServiceLocator
 import java.text.NumberFormat
-import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,7 +88,7 @@ fun OrderHistoryScreen(nav: NavController) {
 @Composable
 fun OrderCard(order: OrderDto) {
     val cs = MaterialTheme.colorScheme
-    val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+    // El formato de moneda funciona igual con Double o Int
     val moneyFormat = NumberFormat.getCurrencyInstance(Locale("es", "CL")).apply { maximumFractionDigits = 0 }
 
     Card(
@@ -103,19 +102,36 @@ fun OrderCard(order: OrderDto) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Pedido #${order.id}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(dateFormat.format(Date(order.timestamp)), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+
+                // CORRECCIÓN 1: Usar order.date (String?) en lugar de timestamp
+                // El backend envía la fecha como String ISO (ej: "2023-11-20T10:15:30")
+                // Aquí la mostramos tal cual, o ponemos un texto por defecto si es nula.
+                Text(
+                    text = order.date?.replace("T", " ")?.substringBefore(".") ?: "Fecha desc.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cs.onSurfaceVariant
+                )
             }
             Divider(modifier = Modifier.padding(vertical = 8.dp), color = cs.outlineVariant)
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.ShoppingBag, null, tint = cs.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(order.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+
+                // CORRECCIÓN 2: Manejar summary (String?) que puede ser nulo
+                Text(
+                    text = order.summary ?: "Sin descripción",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2
+                )
             }
 
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                // itemsCount tiene un valor por defecto en el DTO, así que esto es seguro
                 Text("${order.itemsCount} productos", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+
+                // total es Double, moneyFormat lo acepta correctamente
                 Text(moneyFormat.format(order.total), style = MaterialTheme.typography.titleMedium, color = cs.primary, fontWeight = FontWeight.Bold)
             }
         }

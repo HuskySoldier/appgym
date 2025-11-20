@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 class ProductsRepository(context: Context) {
+
+
     private val api = ServiceLocator.api()
 
     // --- LECTURA (API Directa) ---
@@ -35,6 +37,7 @@ class ProductsRepository(context: Context) {
         val all = getAll()
         return all.filter { it.id.toLong() in ids }.associate { it.id.toLong() to it.nombre }
     }
+
 
     suspend fun getTypesById(ids: List<Long>): Map<Long, String> {
         if (ids.isEmpty()) return emptyMap()

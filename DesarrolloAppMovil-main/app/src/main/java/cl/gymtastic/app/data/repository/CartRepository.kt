@@ -59,22 +59,25 @@ class CartRepository(private val context: Context) {
     ): Pair<Boolean, String> {
         if (userEmail.isBlank()) throw IOException("Email de usuario no disponible.")
 
-        val types = ServiceLocator.products(context).getTypesById(items.map { it.productId })
+        val productsRepo = ServiceLocator.products(context)
+
+        // 1. Obtener IDs de los items
+        val itemIds = items.map { it.productId }
+
+        // 2. Obtener Tipos Y NOMBRES (Usando la función que acabas de agregar)
+        val types = productsRepo.getTypesById(itemIds)
+        val names = productsRepo.getNamesById(itemIds) // <--- ¡ESTA ES LA CLAVE!
 
         val cartItemsDto = items.map { item ->
             CartItemDto(
                 productId = item.productId.toInt(),
-                qty = item.qty, // Asegúrate que CartItemDto usa @SerializedName("qty") o "qty" en el backend
+                qty = item.qty,
                 tipo = types[item.productId] ?: "merch",
 
-                // --- AGREGAR ESTO ---
+                // 3. Asignar el nombre real obtenido del repositorio
+                nombre = names[item.productId] ?: "Producto ${item.productId}",
 
-                // 1. PRECIO (Crucial para evitar el error 500)
-                precio = item.unitPrice.toDouble(),
-
-                // 2. NOMBRE (Para que el historial se vea bien)
-                // Si tu CartItem no tiene .name, tendrás que buscarlo o poner uno temporal
-                nombre = "Producto ${item.productId}" // O usa: item.name si actualizas tu modelo CartItem
+                precio = item.unitPrice.toDouble()
             )
         }
 
