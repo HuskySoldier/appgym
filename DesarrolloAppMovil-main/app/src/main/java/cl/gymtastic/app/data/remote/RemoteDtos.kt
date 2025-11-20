@@ -1,6 +1,7 @@
 package cl.gymtastic.app.data.remote
 
 import cl.gymtastic.app.data.local.Sede
+import com.google.gson.annotations.SerializedName
 
 
 // ====================================================================
@@ -67,7 +68,9 @@ data class ProfileUpdateRequest(
 data class CartItemDto(
     val productId: Int,
     val qty: Int,
-    val tipo: String
+    val tipo: String,
+    val nombre: String,
+    val precio: Double // <--- AGREGA ESTA LÍNEA
 )
 
 data class StockDecreaseRequest(
@@ -91,12 +94,25 @@ data class SubscriptionUpdateRequest(
 // --- NUEVO: DTO para Historial de Compras ---
 data class OrderDto(
     val id: Long,
-    val timestamp: Long,
-    val total: Int,
-    val itemsCount: Int,
-    val summary: String // Ej: "Plan Mensual, Proteína..."
-)
 
+    // 1. El backend envía "date" (String tipo fecha), no un Long timestamp
+    @SerializedName("date")
+    val date: String?,
+
+    // 2. El backend envía "totalAmount" (Double), no "total" (Int)
+    @SerializedName("totalAmount")
+    val total: Double,
+
+    // 3. "itemsCount" NO existe en el backend.
+    // Si lo necesitas, debes calcularlo o pedirle al backend que lo envíe.
+    // Por ahora, dales un valor por defecto para que no falle.
+    val itemsCount: Int = 0,
+
+    // 4. CRÍTICO: El backend envía "description".
+    // Debe ser String? (nullable) para que no se cierre la app si viene vacío.
+    @SerializedName("description")
+    val summary: String?
+)
 // --- Attendance ---
 
 data class AttendanceHistoryResponse(

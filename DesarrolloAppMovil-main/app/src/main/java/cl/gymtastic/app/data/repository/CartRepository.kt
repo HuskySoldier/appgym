@@ -64,8 +64,17 @@ class CartRepository(private val context: Context) {
         val cartItemsDto = items.map { item ->
             CartItemDto(
                 productId = item.productId.toInt(),
-                qty = item.qty,
-                tipo = types[item.productId] ?: "merch"
+                qty = item.qty, // Asegúrate que CartItemDto usa @SerializedName("qty") o "qty" en el backend
+                tipo = types[item.productId] ?: "merch",
+
+                // --- AGREGAR ESTO ---
+
+                // 1. PRECIO (Crucial para evitar el error 500)
+                precio = item.unitPrice.toDouble(),
+
+                // 2. NOMBRE (Para que el historial se vea bien)
+                // Si tu CartItem no tiene .name, tendrás que buscarlo o poner uno temporal
+                nombre = "Producto ${item.productId}" // O usa: item.name si actualizas tu modelo CartItem
             )
         }
 
