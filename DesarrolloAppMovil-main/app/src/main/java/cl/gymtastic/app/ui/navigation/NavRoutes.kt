@@ -5,4 +5,6 @@ object NavRoutes {
     const val REGISTER = "register"
     const val HOME = "home"
     const val FORGOT_PASSWORD = "forgot_password" // <-- NUEVO
+
+    const val ORDER_HISTORY = "order_history"
 }

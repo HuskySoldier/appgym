@@ -88,6 +88,15 @@ data class SubscriptionUpdateRequest(
     val sedeLng: Double?
 )
 
+// --- NUEVO: DTO para Historial de Compras ---
+data class OrderDto(
+    val id: Long,
+    val timestamp: Long,
+    val total: Int,
+    val itemsCount: Int,
+    val summary: String // Ej: "Plan Mensual, Proteína..."
+)
+
 // --- Attendance ---
 
 data class AttendanceHistoryResponse(

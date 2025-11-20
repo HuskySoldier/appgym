@@ -3,9 +3,10 @@ package cl.gymtastic.app.data.repository
 import android.content.Context
 import android.util.Log
 import cl.gymtastic.app.data.local.Sede
-import cl.gymtastic.app.data.model.CartItem // <-- Usamos el nuevo modelo
+import cl.gymtastic.app.data.model.CartItem
 import cl.gymtastic.app.data.remote.CartItemDto
 import cl.gymtastic.app.data.remote.CheckoutRequest
+import cl.gymtastic.app.data.remote.OrderDto // Importar
 import cl.gymtastic.app.util.ServiceLocator
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,19 +15,15 @@ import kotlinx.coroutines.flow.update
 import retrofit2.HttpException
 import java.io.IOException
 
-// Mantenemos el Singleton para que los datos persistan mientras la app vive
 class CartRepository(private val context: Context) {
     private val api = ServiceLocator.api()
 
-    // --- CARRITO EN MEMORIA (Sustituye a la DB) ---
+    // --- CARRITO EN MEMORIA ---
     private val _cartItems = MutableStateFlow<List<CartItem>>(emptyList())
-
-    // Flujo observable para la UI
     fun observeCart() = _cartItems.asStateFlow()
 
     suspend fun add(productId: Long, qty: Int, unitPrice: Int) {
         _cartItems.update { currentList ->
-            // Verificar si ya existe para sumar cantidad
             val existing = currentList.find { it.productId == productId }
             if (existing != null) {
                 currentList.map {
@@ -54,7 +51,7 @@ class CartRepository(private val context: Context) {
         _cartItems.update { list -> list.filter { it.productId !in ids } }
     }
 
-    // --- PROCESO DE CHECKOUT (Igual que antes, pero sin DB) ---
+    // --- CHECKOUT ---
     suspend fun processCheckout(
         userEmail: String,
         items: List<CartItem>,
@@ -62,7 +59,6 @@ class CartRepository(private val context: Context) {
     ): Pair<Boolean, String> {
         if (userEmail.isBlank()) throw IOException("Email de usuario no disponible.")
 
-        // Obtener tipos (plan/merch) desde la API
         val types = ServiceLocator.products(context).getTypesById(items.map { it.productId })
 
         val cartItemsDto = items.map { item ->
@@ -87,13 +83,9 @@ class CartRepository(private val context: Context) {
                 val planActivated = body["planActivated"] as? Boolean ?: false
                 val message = body["message"] as? String ?: "Compra procesada exitosamente."
 
-                clear() // Limpiar carrito en memoria
-
-                // Refrescar usuario si compró plan
+                clear()
                 if (planActivated) {
                     ServiceLocator.auth(context).getUserProfile(userEmail)
-                    // Nota: getUserProfile en AuthRepository ahora solo devuelve datos,
-                    // asegúrate de que tu HomeScreen recargue al volver.
                 }
                 return Pair(planActivated, message)
             } else {
@@ -108,6 +100,22 @@ class CartRepository(private val context: Context) {
             }
         } catch (e: HttpException) {
             throw IOException("Error de conexión.")
+        }
+    }
+
+    // --- NUEVO: OBTENER HISTORIAL ---
+    suspend fun getOrderHistory(email: String): List<OrderDto> {
+        return try {
+            val response = api.getOrderHistory(email)
+            if (response.isSuccessful) {
+                response.body() ?: emptyList()
+            } else {
+                Log.e("CartRepo", "Error fetching history: ${response.code()}")
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e("CartRepo", "Exception fetching history", e)
+            emptyList() // Retorna lista vacía si hay error de red (o si el endpoint no existe aún)
         }
     }
 }

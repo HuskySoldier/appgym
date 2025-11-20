@@ -7,9 +7,9 @@ import retrofit2.http.*
 
 interface GymTasticApi {
     companion object {
-        // Usamos el host del emulador para acceder al localhost de tu PC
+        // Asegúrate de usar la IP de tu PC, NO 10.0.2.2 si usas dispositivo físico
+        // private const val BASE_IP = "http://192.168.X.X"
         private const val BASE_IP = "http://10.0.2.2"
-        // Esta URL base se usa por defecto, pero las anotaciones @Url o rutas absolutas la sobrescriben
         const val BASE_URL = "$BASE_IP/"
     }
 
@@ -33,7 +33,6 @@ interface GymTasticApi {
     @GET("$BASE_IP:8082/users/{email}")
     suspend fun getUserProfile(@Path("email") email: String): Response<UserProfileDto>
 
-    // Nuevo: Obtener todos los usuarios (Admin)
     @GET("$BASE_IP:8082/users")
     suspend fun getAllUsers(): Response<List<UserProfileDto>>
 
@@ -75,9 +74,13 @@ interface GymTasticApi {
     suspend fun deleteTrainer(@Path("id") id: Long): Response<Unit>
 
 
-    // --- 6. CHECKOUT SERVICE (Puerto 8086) ---
+    // --- 6. CHECKOUT & ORDERS SERVICE (Puerto 8086) ---
     @POST("$BASE_IP:8086/checkout")
     suspend fun processCheckout(@Body request: CheckoutRequest): Response<Map<String, Any>>
+
+    // NUEVO: Obtener historial de compras
+    @GET("$BASE_IP:8086/orders/{email}")
+    suspend fun getOrderHistory(@Path("email") email: String): Response<List<OrderDto>>
 
 
     // --- 7. ATTENDANCE SERVICE (Puerto 8087) ---

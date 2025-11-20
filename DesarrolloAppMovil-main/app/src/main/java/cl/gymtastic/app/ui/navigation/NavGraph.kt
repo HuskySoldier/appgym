@@ -11,6 +11,7 @@ import androidx.navigation.navArgument
 import com.google.accompanist.navigation.animation.AnimatedNavHost
 import com.google.accompanist.navigation.animation.composable
 import com.google.accompanist.navigation.animation.rememberAnimatedNavController
+import cl.gymtastic.app.ui.orders.OrderHistoryScreen // <-- Importar
 
 
 // ===== Rutas (Opción A: todo hijo directo del NavHost raíz) =====
@@ -31,6 +32,8 @@ sealed class Screen(val route: String) {
     data object Admin : Screen("admin")
     data object ForgotPassword : Screen("forgot_password")
 
+    data object OrderHistory : Screen("order_history") // <-- NUEVA SCREEN EN SEALED CLASS
+
 
     // payment_success con query opcional ?plan=
     data object PaymentSuccess : Screen("payment_success") {
@@ -49,7 +52,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun NavGraph(
     startDestination: String = Screen.Login.route,
-    windowSizeClass: WindowSizeClass // <-- PARÁMETRO AÑADIDO
+    windowSizeClass: WindowSizeClass
 ) {
     val navController = rememberAnimatedNavController()
 
@@ -61,9 +64,9 @@ fun NavGraph(
     AnimatedNavHost(
         navController = navController,
         startDestination = startDestination,
-        route = "root" // opcional, ayuda a estructurar popUpTo
+        route = "root"
     ) {
-        // ======= Hijos directos del NavHost raíz =======
+        // ... (Rutas existentes Login, Register, Home, etc. NO TOCAR) ...
 
         composable(
             route = Screen.Login.route,
@@ -72,170 +75,70 @@ fun NavGraph(
             popEnterTransition = { enterLeft() },
             popExitTransition = { exitRight() }
         ) {
-            // Ahora puedes pasar windowSizeClass si LoginScreen lo necesita
-            // cl.gymtastic.app.ui.auth.LoginScreen(navController, windowSizeClass)
             cl.gymtastic.app.ui.auth.LoginScreen(navController, windowSizeClass)
         }
 
-        composable(
-            route = Screen.Register.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Register.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.auth.RegisterScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Home.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Home.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.home.HomeScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Planes.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Planes.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.planes.PlanesScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Payment.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Payment.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.payment.PaymentScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Store.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Store.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.store.StoreScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Cart.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Cart.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.cart.CartScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.CheckIn.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.CheckIn.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.checkin.CheckInScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Trainers.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Trainers.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.trainers.TrainersScreen(navController, windowSizeClass)
         }
-
         composable(
             route = Screen.Booking.route,
-            arguments = listOf(
-                navArgument("trainerId") {
-                    type = NavType.LongType
-                    defaultValue = -1L
-                }
-            ),
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
+            arguments = listOf(navArgument("trainerId") { type = NavType.LongType; defaultValue = -1L }),
+            enterTransition = { enterRight() }, exitTransition = { exitLeft() }
         ) {
-            it.arguments?.getLong("trainerId") ?: -1L
-            cl.gymtastic.app.ui.booking.BookingScreen(
-                navController,
-                windowSizeClass /*, trainerId*/
-            )
+            cl.gymtastic.app.ui.booking.BookingScreen(navController, windowSizeClass)
         }
-
-        // ÚNICA definición de payment_success con arg opcional plan
         composable(
             route = Screen.PaymentSuccess.routeWithArg,
-            arguments = listOf(
-                navArgument("plan") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }
-            ),
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
+            arguments = listOf(navArgument("plan") { type = NavType.BoolType; defaultValue = false }),
+            enterTransition = { enterRight() }, exitTransition = { exitLeft() }
         ) { backStackEntry ->
             val planActivated = backStackEntry.arguments?.getBoolean("plan") ?: false
-            cl.gymtastic.app.ui.payment.PaymentSuccessScreen(
-                nav = navController,
-                planActivated = planActivated,windowSizeClass
-            )
+            cl.gymtastic.app.ui.payment.PaymentSuccessScreen(nav = navController, planActivated = planActivated, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Profile.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Profile.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.profile.ProfileScreen(navController, windowSizeClass)
         }
-
-        composable(
-            route = Screen.Admin.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.Admin.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.admin.AdminScreen(navController, windowSizeClass)
-
-
         }
-        composable(
-            route = Screen.ForgotPassword.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() },
-            popEnterTransition = { enterLeft() },
-            popExitTransition = { exitRight() }
-        ) {
+        composable(route = Screen.ForgotPassword.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.auth.ForgotPasswordScreen(navController)
         }
-
-        composable(
-            route = Screen.TrainerDashboard.route,
-            enterTransition = { enterRight() },
-            exitTransition = { exitLeft() }
-        ) {
+        composable(route = Screen.TrainerDashboard.route, enterTransition = { enterRight() }, exitTransition = { exitLeft() }) {
             cl.gymtastic.app.ui.trainers.TrainerDashboardScreen(navController)
         }
-    }
 
+        // --- NUEVA RUTA DE HISTORIAL ---
+        composable(
+            route = Screen.OrderHistory.route,
+            enterTransition = { enterRight() },
+            exitTransition = { exitLeft() },
+            popEnterTransition = { enterLeft() },
+            popExitTransition = { exitRight() }
+        ) {
+            OrderHistoryScreen(nav = navController)
+        }
+    }
 }
