@@ -35,8 +35,10 @@ class RegisterInstrumentedTest {
     @Test
     fun create_account_button_is_disabled_initially() {
         launchRegisterScreen()
-        // El botón "Crear cuenta" no debe funcionar si el formulario está vacío
-        composeTestRule.onNodeWithText("Crear cuenta").assertIsNotEnabled()
+
+        // CORRECCIÓN: Usamos 'hasClickAction()' para diferenciar el botón del título.
+        // Buscamos el nodo que tenga el texto "Crear cuenta" Y que sea clickable.
+        composeTestRule.onNode(hasText("Crear cuenta") and hasClickAction()).assertIsNotEnabled()
     }
 
     @Test
@@ -81,7 +83,7 @@ class RegisterInstrumentedTest {
 
         composeTestRule.waitForIdle()
 
-        // Ahora el botón debe estar habilitado
-        composeTestRule.onNodeWithText("Crear cuenta").assertIsEnabled()
+        // CORRECCIÓN: Igual que arriba, usamos el matcher específico para el botón
+        composeTestRule.onNode(hasText("Crear cuenta") and hasClickAction()).assertIsEnabled()
     }
 }

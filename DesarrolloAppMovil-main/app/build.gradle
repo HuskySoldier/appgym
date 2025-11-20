@@ -77,6 +77,9 @@ dependencies {
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     debugImplementation 'androidx.compose.ui:ui-tooling'
+    // --- DEPENDENCIA AGREGADA PARA FIXEAR EL ERROR DE ACTIVIDAD EN TESTS ---
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.material:material-icons-extended'
 

@@ -9,6 +9,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.ComposeNavigator
+import androidx.navigation.compose.composable
+import androidx.navigation.createGraph
 import androidx.navigation.testing.TestNavHostController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import cl.gymtastic.app.ui.auth.LoginScreen
@@ -34,6 +36,20 @@ class LoginNavigationTest {
                 val context = LocalContext.current
                 navController = TestNavHostController(context)
                 navController.navigatorProvider.addNavigator(ComposeNavigator())
+
+                // --- FIX: Configurar el grafo para que el NavController conozca los destinos ---
+                navController.graph = navController.createGraph(startDestination = NavRoutes.LOGIN) {
+                    composable(NavRoutes.LOGIN) {
+                        // Pantalla de inicio (aunque aquí se renderiza manualmente abajo)
+                    }
+                    composable(NavRoutes.FORGOT_PASSWORD) {
+                        // Destino vacío solo para validar la navegación
+                    }
+                    composable(NavRoutes.REGISTER) {
+                        // Destino vacío solo para validar la navegación
+                    }
+                }
+                // -----------------------------------------------------------------------------
 
                 val windowSizeClass = WindowSizeClass.calculateFromSize(DpSize(360.dp, 640.dp))
                 LoginScreen(nav = navController, windowSizeClass = windowSizeClass)
