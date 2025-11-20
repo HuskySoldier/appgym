@@ -6,7 +6,8 @@ import cl.gymtastic.app.data.local.datastore.SessionPrefs
 import cl.gymtastic.app.data.remote.*
 import cl.gymtastic.app.util.ServiceLocator
 
-class AuthRepository(context: Context) {
+// Se agrega 'open' para permitir herencia en los tests (FakeAuthRepository)
+open class AuthRepository(context: Context) {
     // Solo dependemos de DataStore (para el token) y la API
     private val prefs = SessionPrefs(context)
     private val api = ServiceLocator.api()
@@ -29,7 +30,8 @@ class AuthRepository(context: Context) {
         }
     }
 
-    suspend fun login(email: String, password: String): Boolean {
+    // Se agrega 'open' para poder sobrescribirlo en los tests
+    open suspend fun login(email: String, password: String): Boolean {
         val e = normEmail(email)
         return try {
             val response = api.login(LoginRequest(e, password))
@@ -61,8 +63,9 @@ class AuthRepository(context: Context) {
     /**
      * Obtiene el perfil del usuario directamente de la API.
      * Reemplaza a getUserRemote y refreshUserProfile.
+     * Se agrega 'open' para simular respuestas en los tests.
      */
-    suspend fun getUserProfile(email: String): UserProfileDto? {
+    open suspend fun getUserProfile(email: String): UserProfileDto? {
         return try {
             val response = api.getUserProfile(email)
             if (response.isSuccessful) {

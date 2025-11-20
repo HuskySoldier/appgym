@@ -1,6 +1,5 @@
 package cl.gymtastic.app.ui.auth
 
-import cl.gymtastic.app.util.ServiceLocator
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -18,9 +17,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -48,6 +47,7 @@ import androidx.navigation.NavController
 import cl.gymtastic.app.data.repository.AuthRepository
 import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.ui.navigation.Screen
+import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
 
 // -----------------------------
@@ -74,7 +74,6 @@ class LoginViewModel(
             val email = emailRaw.trim().lowercase()
             val pass = passRaw.trim()
 
-            // Intentamos login
             val loginSuccessful = repoProvider(context).login(email, pass)
 
             loading = false
@@ -94,10 +93,13 @@ class LoginViewModel(
 @Composable
 fun LoginScreen(
     nav: NavController,
-    windowSizeClass: WindowSizeClass
+    windowSizeClass: WindowSizeClass,
+    // INYECCIÓN: Este parámetro permite que los tests pasen un VM falso.
+    // 'remember' crea el VM real por defecto para la app normal.
+    viewModel: LoginViewModel = remember { LoginViewModel { ServiceLocator.auth(it) } }
 ) {
     val ctx = LocalContext.current
-    val vm: LoginViewModel = remember { LoginViewModel { ServiceLocator.auth(it) } }
+    val vm = viewModel // Usamos el VM inyectado
 
     var email by rememberSaveable { mutableStateOf("") }
     var pass by rememberSaveable { mutableStateOf("") }
@@ -128,19 +130,15 @@ fun LoginScreen(
     val isEmailValid by derivedStateOf { email.contains("@") && email.contains(".") && email.length >= 6 }
     val isPassValid by derivedStateOf { pass.length >= 6 }
 
-    // --- FUNCIÓN CORREGIDA ---
     fun doLogin() {
         keyboard?.hide()
         val currentEmail = email.trim().lowercase()
 
         vm.login(ctx, currentEmail, pass) {
-            // ÉXITO: Ahora consultamos a la API para saber el rol (sin usar DB local)
             scope.launch {
-                // 1. Obtenemos el perfil desde el Backend
                 val authRepo = ServiceLocator.auth(ctx)
                 val userProfile = authRepo.getUserProfile(currentEmail)
 
-                // 2. Redirigimos según el rol
                 if (userProfile?.rol == "trainer") {
                     nav.navigate(Screen.TrainerDashboard.route) {
                         popUpTo(NavRoutes.LOGIN) { inclusive = true }
@@ -156,7 +154,7 @@ fun LoginScreen(
         }
     }
 
-    // --- Layout Principal ---
+    // Layout
     Box(modifier = Modifier.fillMaxSize().background(bg).padding(16.dp), contentAlignment = Alignment.Center) {
         AnimatedVisibility(visible = show, enter = fadeIn() + slideInVertically { it / 3 }, exit = fadeOut() + slideOutVertically { it / 3 }) {
             val widthSizeClass = windowSizeClass.widthSizeClass
@@ -168,7 +166,6 @@ fun LoginScreen(
             Card(modifier = cardModifier, shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = cs.surface)) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 24.dp).verticalScroll(scroll), horizontalAlignment = Alignment.CenterHorizontally) {
 
-                    // Encabezado
                     Box(modifier = Modifier.fillMaxWidth().background(brush = Brush.horizontalGradient(listOf(cs.primary, cs.secondary)), shape = RoundedCornerShape(20.dp)).padding(vertical = 14.dp, horizontal = 12.dp)) {
                         Text(text = "GymTastic", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif, letterSpacing = 1.5.sp), color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
@@ -176,7 +173,6 @@ fun LoginScreen(
                     Text("Bienvenido 👋\nInicia sesión para continuar", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
 
-                    // Campo Email
                     OutlinedTextField(
                         value = email, onValueChange = { email = it; vm.clearError() },
                         label = { Text("Email") }, singleLine = true, leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
@@ -188,7 +184,6 @@ fun LoginScreen(
                     )
                     Spacer(Modifier.height(12.dp))
 
-                    // Campo Contraseña
                     OutlinedTextField(
                         value = pass, onValueChange = { pass = it; vm.clearError() },
                         label = { Text("Contraseña") }, singleLine = true, leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
@@ -203,39 +198,23 @@ fun LoginScreen(
                     )
                     Spacer(Modifier.height(8.dp))
 
-                    Box(
-                        modifier = Modifier.fillMaxWidth(0.94f),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
+                    Box(modifier = Modifier.fillMaxWidth(0.94f), contentAlignment = Alignment.CenterEnd) {
                         TextButton(onClick = { nav.navigate(NavRoutes.FORGOT_PASSWORD) }) {
-                            Text(
-                                "¿Olvidaste tu contraseña?",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = cs.primary
-                            )
+                            Text("¿Olvidaste tu contraseña?", style = MaterialTheme.typography.bodySmall, color = cs.primary)
                         }
                     }
                     Spacer(Modifier.height(8.dp))
 
-                    // Mensaje de Error
                     AnimatedVisibility(visible = vm.error != null) {
-                        Text(
-                            text = vm.error ?: "",
-                            color = cs.error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(0.94f).padding(bottom = 8.dp)
-                        )
+                        Text(text = vm.error ?: "", color = cs.error, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(0.94f).padding(bottom = 8.dp))
                     }
 
-                    // Botón Ingresar
                     Button(onClick = { doLogin() }, enabled = !vm.loading && isEmailValid && isPassValid, modifier = Modifier.fillMaxWidth(0.94f).height(48.dp)) {
                         if (vm.loading) { CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp).padding(end = 8.dp), color = cs.onPrimary) }
                         Text(if (vm.loading) "Ingresando..." else "Ingresar")
                     }
                     Spacer(Modifier.height(10.dp))
 
-                    // Botón Crear Cuenta
                     Button(onClick = { nav.navigate(NavRoutes.REGISTER) }, modifier = Modifier.fillMaxWidth(0.94f).height(48.dp)) {
                         Text("Crear cuenta")
                     }
