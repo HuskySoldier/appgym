@@ -1,8 +1,8 @@
 package cl.gymtastic.app
 
-import com.google.inject.matcher.Matchers.any
 import android.content.Context
 import cl.gymtastic.app.data.repository.AuthRepository
+import cl.gymtastic.app.ui.auth.LoginViewModel
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +40,7 @@ class LoginViewModelTest {
     }
 
     @Test
-    fun loginsuccesscallsonSuccessandclearserror() = runTest(testDispatcher) {
+    fun `login success calls onSuccess and clears error`() = runTest(testDispatcher) {
         // GIVEN: El repositorio responderá "true" (login exitoso)
         coEvery { authRepo.login("juan@test.com", "123456") } returns true
 
@@ -61,7 +61,7 @@ class LoginViewModelTest {
     }
 
     @Test
-    fun loginfailuresetserrormessage () = runTest(testDispatcher) {
+    fun `login failure sets error message`() = runTest(testDispatcher) {
         // GIVEN: El repositorio responderá "false" (login fallido)
         coEvery { authRepo.login(any(), any()) } returns false
 
