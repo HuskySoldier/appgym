@@ -6,68 +6,45 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-// Instancia única del DataStore para preferencias de sesión
 private val Context.sessionStore by preferencesDataStore("session_prefs")
 
 class SessionPrefs(private val context: Context) {
 
     companion object {
-        // Claves para guardar los datos
         private val KEY_TOKEN = stringPreferencesKey("token")
         private val KEY_EMAIL = stringPreferencesKey("user_email")
-        // 1. NUEVA LLAVE: Para guardar la decisión del Checkbox
+        // 1. NUEVA CLAVE
         private val KEY_REMEMBER_ME = booleanPreferencesKey("remember_me")
     }
 
-    // --- MÉTODOS PARA GUARDAR ---
-
-    // Guarda el Email del usuario logueado
+    // --- Guardar ---
     suspend fun saveUserEmail(email: String) {
-        context.sessionStore.edit { preferences ->
-            preferences[KEY_EMAIL] = email
-        }
+        context.sessionStore.edit { it[KEY_EMAIL] = email }
     }
 
-    // Guarda el Token de autenticación
     suspend fun saveAuthToken(token: String) {
-        context.sessionStore.edit { preferences ->
-            preferences[KEY_TOKEN] = token
-        }
+        context.sessionStore.edit { it[KEY_TOKEN] = token }
     }
 
-    // 2. NUEVO MÉTODO: Guardar si el usuario quiere ser recordado
+    // 2. NUEVA FUNCIÓN PARA GUARDAR PREFERENCIA
     suspend fun saveRememberMe(remember: Boolean) {
-        context.sessionStore.edit { preferences ->
-            preferences[KEY_REMEMBER_ME] = remember
-        }
+        context.sessionStore.edit { it[KEY_REMEMBER_ME] = remember }
     }
 
-    // Borra toda la sesión (Logout)
     suspend fun clearSession() {
-        context.sessionStore.edit { preferences ->
-            preferences.clear()
-        }
+        context.sessionStore.edit { it.clear() }
     }
 
-    // --- MÉTODOS PARA LEER (Flows) ---
+    // --- Leer ---
+    val userEmailFlow: Flow<String> = context.sessionStore.data.map { it[KEY_EMAIL] ?: "" }
+    val tokenFlow: Flow<String> = context.sessionStore.data.map { it[KEY_TOKEN] ?: "" }
 
-    // Flujo para observar el email actual (usado en Splash y Home)
-    val userEmailFlow: Flow<String> = context.sessionStore.data.map { preferences ->
-        preferences[KEY_EMAIL] ?: ""
+    // 3. NUEVO FLUJO PARA LEER PREFERENCIA
+    val rememberMeFlow: Flow<Boolean> = context.sessionStore.data.map {
+        it[KEY_REMEMBER_ME] ?: true // Por defecto true
     }
 
-    // Flujo para observar el token (usado en interceptores o repositorios)
-    val tokenFlow: Flow<String> = context.sessionStore.data.map { preferences ->
-        preferences[KEY_TOKEN] ?: ""
-    }
-
-    // 3. NUEVO FLOW: Leer la preferencia "Remember Me"
-    // Por defecto devolvemos 'true' para que usuarios antiguos no pierdan su sesión por error
-    val rememberMeFlow: Flow<Boolean> = context.sessionStore.data.map { preferences ->
-        preferences[KEY_REMEMBER_ME] ?: true
-    }
-
-    // --- MÉTODOS LEGACY (Compatibilidad) ---
+    // Compatibilidad
     suspend fun setUserEmail(email: String) = saveUserEmail(email)
     suspend fun setToken(token: String) = saveAuthToken(token)
     suspend fun clear() = clearSession()

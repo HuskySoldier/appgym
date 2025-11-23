@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import cl.gymtastic.app.R
+import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.ui.navigation.Screen // Usamos Screen en lugar de NavRoutes para coincidir con tu NavGraph
 import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.delay
@@ -55,32 +56,24 @@ fun SplashScreen(nav: NavController) {
         delay(1500)
 
         // 3. Verificar sesión y preferencia "Remember Me"
+        // 1. Leer preferencias
         val prefs = authRepo.prefs()
         val userEmail = prefs.userEmailFlow.first()
-        val isRemembered = prefs.rememberMeFlow.first() // <-- Leemos el checkbox guardado
+        val isRemembered = prefs.rememberMeFlow.first() // <-- LEER
 
-        // 4. Decisión de Navegación
+        // 2. Decidir
         if (userEmail.isNotBlank() && isRemembered) {
-            // A. Tiene usuario Y quiere ser recordado -> HOME
-            // Verificamos si es trainer para mandarlo a su dashboard (Opcional, según tu lógica de Login)
-            // Por simplicidad, aquí mandamos al Home genérico y que Home decida o redireccione si es necesario,
-            // o puedes hacer una llamada rápida a getUserProfile aquí si quieres ser muy específico.
-            // Asumiremos Home por defecto:
-
-            nav.navigate(Screen.Home.route) { // Usamos Screen.Home.route
-                popUpTo(Screen.Splash.route) { inclusive = true }
-            }
+            // Tiene sesión Y quiere ser recordado -> HOME
+            nav.navigate(NavRoutes.HOME) { popUpTo(NavRoutes.Splash) { inclusive = true } }
         } else {
-            // B. No tiene usuario O no quiso ser recordado -> LOGIN
+            // No tiene sesión O no quiere ser recordado -> LOGIN
 
-            // Si había datos pero isRemembered es false, limpiamos por seguridad
+            // Limpieza de seguridad si había datos pero desmarcó el checkbox
             if (userEmail.isNotBlank() && !isRemembered) {
                 authRepo.logout()
             }
 
-            nav.navigate(Screen.Login.route) { // Usamos Screen.Login.route
-                popUpTo(Screen.Splash.route) { inclusive = true }
-            }
+            nav.navigate(NavRoutes.LOGIN) { popUpTo(NavRoutes.Splash) { inclusive = true } }
         }
     }
 

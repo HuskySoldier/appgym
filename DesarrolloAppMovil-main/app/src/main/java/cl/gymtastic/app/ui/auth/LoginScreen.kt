@@ -46,6 +46,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import cl.gymtastic.app.data.repository.AuthRepository
+import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.ui.navigation.Screen
 import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
@@ -67,7 +68,7 @@ class LoginViewModel(
         error = null
     }
 
-    // MODIFICADO: Acepta 'rememberMe'
+    // Función actualizada para recibir 'rememberMe'
     fun login(context: android.content.Context, emailRaw: String, passRaw: String, rememberMe: Boolean, onSuccess: () -> Unit) {
         viewModelScope.launch {
             loading = true
@@ -75,7 +76,7 @@ class LoginViewModel(
             val email = emailRaw.trim().lowercase()
             val pass = passRaw.trim()
 
-            // MODIFICADO: Pasamos 'rememberMe' al repositorio
+            // Pasamos el valor al repositorio
             val loginSuccessful = repoProvider(context).login(email, pass, rememberMe)
 
             loading = false
@@ -105,7 +106,7 @@ fun LoginScreen(
     var pass by rememberSaveable { mutableStateOf("") }
     var passVisible by rememberSaveable { mutableStateOf(false) }
 
-    // 1. NUEVO ESTADO: Para el Checkbox
+    // Estado para el Checkbox (Por defecto true)
     var rememberMe by rememberSaveable { mutableStateOf(true) }
 
     val scope = rememberCoroutineScope()
@@ -137,7 +138,7 @@ fun LoginScreen(
         keyboard?.hide()
         val currentEmail = email.trim().lowercase()
 
-        // MODIFICADO: Pasamos 'rememberMe' al ViewModel
+        // CORRECCIÓN: Pasar 'rememberMe' a la función login
         vm.login(ctx, currentEmail, pass, rememberMe) {
             scope.launch {
                 val authRepo = ServiceLocator.auth(ctx)
@@ -145,12 +146,12 @@ fun LoginScreen(
 
                 if (userProfile?.rol == "trainer") {
                     nav.navigate(Screen.TrainerDashboard.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
+                        popUpTo(NavRoutes.LOGIN) { inclusive = true }
                         launchSingleTop = true
                     }
                 } else {
-                    nav.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
+                    nav.navigate(NavRoutes.HOME) {
+                        popUpTo(NavRoutes.LOGIN) { inclusive = true }
                         launchSingleTop = true
                     }
                 }
@@ -200,9 +201,10 @@ fun LoginScreen(
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = cs.primary, unfocusedBorderColor = cs.onSurface.copy(alpha = 0.3f), cursorColor = cs.primary),
                         modifier = Modifier.fillMaxWidth(0.94f)
                     )
+
                     Spacer(Modifier.height(8.dp))
 
-                    // 2. UI CHECKBOX (Remember Me)
+                    // --- UI CHECKBOX ---
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(0.94f).padding(vertical = 4.dp)
@@ -221,8 +223,10 @@ fun LoginScreen(
                         Spacer(Modifier.weight(1f))
                     }
 
+                    Spacer(Modifier.height(8.dp))
+
                     Box(modifier = Modifier.fillMaxWidth(0.94f), contentAlignment = Alignment.CenterEnd) {
-                        TextButton(onClick = { nav.navigate(Screen.ForgotPassword.route) }) {
+                        TextButton(onClick = { nav.navigate(Screen.ForgotPassword.route) }) { // Usar Screen.ForgotPassword.route si es necesario
                             Text("¿Olvidaste tu contraseña?", style = MaterialTheme.typography.bodySmall, color = cs.primary)
                         }
                     }
@@ -238,7 +242,7 @@ fun LoginScreen(
                     }
                     Spacer(Modifier.height(10.dp))
 
-                    Button(onClick = { nav.navigate(Screen.Register.route) }, modifier = Modifier.fillMaxWidth(0.94f).height(48.dp)) {
+                    Button(onClick = { nav.navigate(NavRoutes.REGISTER) }, modifier = Modifier.fillMaxWidth(0.94f).height(48.dp)) {
                         Text("Crear cuenta")
                     }
                     Spacer(Modifier.height(16.dp))

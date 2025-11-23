@@ -38,15 +38,14 @@ open class AuthRepository(context: Context) {
             val loginResponse = response.body()
 
             if (response.isSuccessful && loginResponse != null && loginResponse.success) {
-                // 1. Obtenemos los datos (token y email seguro)
                 val token = loginResponse.token ?: ""
                 val userEmail = loginResponse.user?.email ?: e
 
-                // 2. Guardamos los datos de sesión
+                // Guardar datos de sesión
                 prefs.saveAuthToken(token)
                 prefs.saveUserEmail(userEmail)
 
-                // 3. IMPORTANTE: Guardamos la preferencia del usuario
+                // NUEVO: Guardar decisión del checkbox
                 prefs.saveRememberMe(rememberMe)
 
                 true
