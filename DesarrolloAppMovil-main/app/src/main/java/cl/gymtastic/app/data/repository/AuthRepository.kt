@@ -30,17 +30,25 @@ open class AuthRepository(context: Context) {
         }
     }
 
-    // Se agrega 'open' para poder sobrescribirlo en los tests
-    open suspend fun login(email: String, password: String): Boolean {
+    // CORRECCIÓN AQUÍ: Agregamos el parámetro rememberMe
+    open suspend fun login(email: String, password: String, rememberMe: Boolean): Boolean {
         val e = normEmail(email)
         return try {
             val response = api.login(LoginRequest(e, password))
             val loginResponse = response.body()
 
             if (response.isSuccessful && loginResponse != null && loginResponse.success) {
-                // Solo guardamos la sesión (token y email) en DataStore
-                prefs.setUserEmail(e)
-                prefs.setToken(loginResponse.token ?: "")
+                // 1. Obtenemos los datos (token y email seguro)
+                val token = loginResponse.token ?: ""
+                val userEmail = loginResponse.user?.email ?: e
+
+                // 2. Guardamos los datos de sesión
+                prefs.saveAuthToken(token)
+                prefs.saveUserEmail(userEmail)
+
+                // 3. IMPORTANTE: Guardamos la preferencia del usuario
+                prefs.saveRememberMe(rememberMe)
+
                 true
             } else {
                 Log.w("AuthRepo", "Login fallido: ${loginResponse?.message}")
@@ -53,18 +61,14 @@ open class AuthRepository(context: Context) {
     }
 
     suspend fun logout() {
-        prefs.clear()
+        // Borra los datos de sesión al salir
+        prefs.clearSession()
     }
 
     fun prefs() = prefs
 
     // --- USER DATA (Backend Directo) ---
 
-    /**
-     * Obtiene el perfil del usuario directamente de la API.
-     * Reemplaza a getUserRemote y refreshUserProfile.
-     * Se agrega 'open' para simular respuestas en los tests.
-     */
     open suspend fun getUserProfile(email: String): UserProfileDto? {
         return try {
             val response = api.getUserProfile(email)
@@ -82,10 +86,6 @@ open class AuthRepository(context: Context) {
 
     // --- ADMIN FEATURES ---
 
-    /**
-     * Obtiene la lista de todos los usuarios directamente de la API.
-     * (Renombrado de syncAllUsers porque ya no sincroniza, solo obtiene)
-     */
     suspend fun getAllUsers(): List<UserProfileDto> {
         return try {
             val response = api.getAllUsers()

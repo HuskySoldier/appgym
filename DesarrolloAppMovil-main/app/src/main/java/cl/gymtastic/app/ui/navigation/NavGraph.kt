@@ -11,11 +11,14 @@ import androidx.navigation.navArgument
 import com.google.accompanist.navigation.animation.AnimatedNavHost
 import com.google.accompanist.navigation.animation.composable
 import com.google.accompanist.navigation.animation.rememberAnimatedNavController
-import cl.gymtastic.app.ui.orders.OrderHistoryScreen // <-- Importar
 
+// Importaciones de tus pantallas
+import cl.gymtastic.app.ui.orders.OrderHistoryScreen
+import cl.gymtastic.app.ui.splash.SplashScreen // <--- Importar Splash
 
-// ===== Rutas (Opción A: todo hijo directo del NavHost raíz) =====
+// ===== Rutas =====
 sealed class Screen(val route: String) {
+    data object Splash   : Screen("splash") // <--- 1. Nueva Ruta
     data object Login    : Screen("login")
     data object Register : Screen("register")
     data object Home     : Screen("home")
@@ -26,22 +29,17 @@ sealed class Screen(val route: String) {
     data object CheckIn  : Screen("checkin")
     data object Trainers : Screen("trainers")
     data object Profile  : Screen("profile")
-
     data object TrainerDashboard : Screen("trainer_dashboard")
-
     data object Admin : Screen("admin")
     data object ForgotPassword : Screen("forgot_password")
+    data object OrderHistory : Screen("order_history")
 
-    data object OrderHistory : Screen("order_history") // <-- NUEVA SCREEN EN SEALED CLASS
-
-
-    // payment_success con query opcional ?plan=
+    // Rutas con argumentos
     data object PaymentSuccess : Screen("payment_success") {
         fun withPlan(plan: Boolean) = "payment_success?plan=$plan"
         const val routeWithArg = "payment_success?plan={plan}"
     }
 
-    // Booking con query trainerId
     data object Booking : Screen("booking?trainerId={trainerId}") {
         fun routeWith(trainerId: Long?) =
             if (trainerId != null) "booking?trainerId=$trainerId" else "booking?trainerId=-1"
@@ -51,11 +49,13 @@ sealed class Screen(val route: String) {
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun NavGraph(
-    startDestination: String = Screen.Login.route,
+    // 2. Cambiamos el destino inicial a Splash
+    startDestination: String = Screen.Splash.route,
     windowSizeClass: WindowSizeClass
 ) {
     val navController = rememberAnimatedNavController()
 
+    // Definición de transiciones (para no repetir código)
     val enterRight = { slideInHorizontally(animationSpec = tween(300)) { it } }
     val exitLeft = { slideOutHorizontally(animationSpec = tween(300)) { -it } }
     val enterLeft = { slideInHorizontally(animationSpec = tween(300)) { -it } }
@@ -66,7 +66,16 @@ fun NavGraph(
         startDestination = startDestination,
         route = "root"
     ) {
-        // ... (Rutas existentes Login, Register, Home, etc. NO TOCAR) ...
+        // --- 3. PANTALLA DE SPLASH (NUEVA) ---
+        composable(
+            route = Screen.Splash.route,
+            // El splash suele no tener animación de entrada, o una simple desvanecimiento
+            exitTransition = { exitLeft() }
+        ) {
+            SplashScreen(nav = navController)
+        }
+
+        // --- PANTALLAS EXISTENTES ---
 
         composable(
             route = Screen.Login.route,
@@ -130,7 +139,7 @@ fun NavGraph(
             cl.gymtastic.app.ui.trainers.TrainerDashboardScreen(navController)
         }
 
-        // --- NUEVA RUTA DE HISTORIAL ---
+        // --- RUTA DE HISTORIAL ---
         composable(
             route = Screen.OrderHistory.route,
             enterTransition = { enterRight() },

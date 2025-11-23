@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,7 +46,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import cl.gymtastic.app.data.repository.AuthRepository
-import cl.gymtastic.app.ui.navigation.NavRoutes
 import cl.gymtastic.app.ui.navigation.Screen
 import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.launch
@@ -67,14 +67,16 @@ class LoginViewModel(
         error = null
     }
 
-    fun login(context: android.content.Context, emailRaw: String, passRaw: String, onSuccess: () -> Unit) {
+    // MODIFICADO: Acepta 'rememberMe'
+    fun login(context: android.content.Context, emailRaw: String, passRaw: String, rememberMe: Boolean, onSuccess: () -> Unit) {
         viewModelScope.launch {
             loading = true
             error = null
             val email = emailRaw.trim().lowercase()
             val pass = passRaw.trim()
 
-            val loginSuccessful = repoProvider(context).login(email, pass)
+            // MODIFICADO: Pasamos 'rememberMe' al repositorio
+            val loginSuccessful = repoProvider(context).login(email, pass, rememberMe)
 
             loading = false
             if (loginSuccessful) {
@@ -94,18 +96,19 @@ class LoginViewModel(
 fun LoginScreen(
     nav: NavController,
     windowSizeClass: WindowSizeClass,
-    // INYECCIÓN: Este parámetro permite que los tests pasen un VM falso.
-    // 'remember' crea el VM real por defecto para la app normal.
     viewModel: LoginViewModel = remember { LoginViewModel { ServiceLocator.auth(it) } }
 ) {
     val ctx = LocalContext.current
-    val vm = viewModel // Usamos el VM inyectado
+    val vm = viewModel
 
     var email by rememberSaveable { mutableStateOf("") }
     var pass by rememberSaveable { mutableStateOf("") }
     var passVisible by rememberSaveable { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
 
+    // 1. NUEVO ESTADO: Para el Checkbox
+    var rememberMe by rememberSaveable { mutableStateOf(true) }
+
+    val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
 
     // Animaciones
@@ -134,19 +137,20 @@ fun LoginScreen(
         keyboard?.hide()
         val currentEmail = email.trim().lowercase()
 
-        vm.login(ctx, currentEmail, pass) {
+        // MODIFICADO: Pasamos 'rememberMe' al ViewModel
+        vm.login(ctx, currentEmail, pass, rememberMe) {
             scope.launch {
                 val authRepo = ServiceLocator.auth(ctx)
                 val userProfile = authRepo.getUserProfile(currentEmail)
 
                 if (userProfile?.rol == "trainer") {
                     nav.navigate(Screen.TrainerDashboard.route) {
-                        popUpTo(NavRoutes.LOGIN) { inclusive = true }
+                        popUpTo(Screen.Login.route) { inclusive = true }
                         launchSingleTop = true
                     }
                 } else {
-                    nav.navigate(NavRoutes.HOME) {
-                        popUpTo(NavRoutes.LOGIN) { inclusive = true }
+                    nav.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
                         launchSingleTop = true
                     }
                 }
@@ -198,8 +202,27 @@ fun LoginScreen(
                     )
                     Spacer(Modifier.height(8.dp))
 
+                    // 2. UI CHECKBOX (Remember Me)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(0.94f).padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = rememberMe,
+                            onCheckedChange = { rememberMe = it },
+                            colors = CheckboxDefaults.colors(checkedColor = cs.primary)
+                        )
+                        Text(
+                            text = "Mantener sesión iniciada",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = cs.onSurface,
+                            modifier = Modifier.clickable { rememberMe = !rememberMe }
+                        )
+                        Spacer(Modifier.weight(1f))
+                    }
+
                     Box(modifier = Modifier.fillMaxWidth(0.94f), contentAlignment = Alignment.CenterEnd) {
-                        TextButton(onClick = { nav.navigate(NavRoutes.FORGOT_PASSWORD) }) {
+                        TextButton(onClick = { nav.navigate(Screen.ForgotPassword.route) }) {
                             Text("¿Olvidaste tu contraseña?", style = MaterialTheme.typography.bodySmall, color = cs.primary)
                         }
                     }
@@ -215,7 +238,7 @@ fun LoginScreen(
                     }
                     Spacer(Modifier.height(10.dp))
 
-                    Button(onClick = { nav.navigate(NavRoutes.REGISTER) }, modifier = Modifier.fillMaxWidth(0.94f).height(48.dp)) {
+                    Button(onClick = { nav.navigate(Screen.Register.route) }, modifier = Modifier.fillMaxWidth(0.94f).height(48.dp)) {
                         Text("Crear cuenta")
                     }
                     Spacer(Modifier.height(16.dp))
