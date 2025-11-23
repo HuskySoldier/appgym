@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import cl.gymtastic.app.R
 import cl.gymtastic.app.ui.navigation.NavRoutes
-import cl.gymtastic.app.ui.navigation.Screen // Usamos Screen en lugar de NavRoutes para coincidir con tu NavGraph
 import cl.gymtastic.app.util.ServiceLocator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -89,7 +88,7 @@ fun SplashScreen(nav: NavController) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                painter = painterResource(id = R.drawable.logogym),
                 contentDescription = "Logo",
                 modifier = Modifier
                     .size(200.dp)
@@ -99,7 +98,7 @@ fun SplashScreen(nav: NavController) {
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "GYMTASTIC",
+                text = "Vencete para vencer",
                 style = MaterialTheme.typography.headlineLarge,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,

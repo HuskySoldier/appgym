@@ -80,11 +80,11 @@ class MainActivity : ComponentActivity() {
 
                 // Carga el grafo de navegación principal
                 NavGraph(
-                    startDestination = Screen.Login.route, // Empieza en Login
-                    windowSizeClass = windowSizeClass // Pasa la clase de tamaño
+                    // Cambia Screen.Login.route por Screen.Splash.route
+                    startDestination = Screen.Splash.route,
+                    windowSizeClass = windowSizeClass
                 )
             }
         }
     }
 }
-
