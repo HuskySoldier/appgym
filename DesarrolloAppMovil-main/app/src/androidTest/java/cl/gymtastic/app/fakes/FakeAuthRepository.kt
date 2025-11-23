@@ -8,7 +8,7 @@ import cl.gymtastic.app.data.repository.AuthRepository
 class FakeAuthRepository(context: Context) : AuthRepository(context) {
 
     // Simulamos el login sin red
-    override suspend fun login(email: String, password: String): Boolean {
+    override suspend fun login(email: String, password: String, rememberMe: Boolean): Boolean {
         // Lógica simple de prueba
         return email == "test@gym.com" && password == "123456"
     }

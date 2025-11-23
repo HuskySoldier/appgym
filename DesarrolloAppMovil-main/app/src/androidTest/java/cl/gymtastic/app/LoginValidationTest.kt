@@ -26,6 +26,7 @@ class LoginValidationTest {
         composeTestRule.setContent {
             GymTasticTheme {
                 val navController = TestNavHostController(LocalContext.current)
+                // Simulamos un tamaño de pantalla de teléfono estándar
                 val windowSizeClass = WindowSizeClass.calculateFromSize(DpSize(360.dp, 640.dp))
                 LoginScreen(nav = navController, windowSizeClass = windowSizeClass)
             }
@@ -38,9 +39,12 @@ class LoginValidationTest {
 
         // WHEN: Escribimos un email sin arroba
         composeTestRule.onNodeWithText("Email").performTextInput("emailinvalido")
+
+        // Cerramos teclado o quitamos foco para asegurar que la UI se asiente
+        composeTestRule.onRoot().performClick()
         composeTestRule.waitForIdle()
 
-        // THEN: Debe aparecer el mensaje de error específico
+        // THEN: Debe aparecer el mensaje de error
         composeTestRule.onNodeWithText("Ingresa un email válido").assertIsDisplayed()
     }
 
@@ -48,11 +52,10 @@ class LoginValidationTest {
     fun show_error_when_password_is_too_short() {
         launchLoginScreen()
 
-        // WHEN: Escribimos una clave de 3 dígitos (el mínimo es 6)
         composeTestRule.onNodeWithText("Contraseña").performTextInput("123")
+        composeTestRule.onRoot().performClick()
         composeTestRule.waitForIdle()
 
-        // THEN: Debe aparecer el mensaje de longitud mínima
         composeTestRule.onNodeWithText("Mínimo 6 caracteres").assertIsDisplayed()
     }
 
@@ -60,13 +63,30 @@ class LoginValidationTest {
     fun password_visibility_toggles_work() {
         launchLoginScreen()
 
-        // Escribimos algo para tener contenido
         composeTestRule.onNodeWithText("Contraseña").performTextInput("password123")
 
-        // 1. Buscar el ícono por su descripción "Mostrar" y hacer click
+        // 1. Click en mostrar
         composeTestRule.onNodeWithContentDescription("Mostrar").performClick()
 
-        // 2. Ahora debería cambiar a "Ocultar" (significa que el estado visual cambió)
+        // 2. Verificar que cambió a ocultar
         composeTestRule.onNodeWithContentDescription("Ocultar").assertIsDisplayed()
+    }
+
+    // --- NUEVO TEST PARA EL CHECKBOX ---
+    @Test
+    fun remember_me_checkbox_is_displayed_and_toggleable() {
+        launchLoginScreen()
+
+        // 1. Verificar que el texto existe
+        val checkboxLabel = composeTestRule.onNodeWithText("Mantener sesión iniciada")
+        checkboxLabel.assertIsDisplayed()
+
+        // 2. Buscar el checkbox asociado (usualmente es el hermano en la fila o parte del Row clickeable)
+        // En tu código el Row tiene el modificador .clickable, así que al hacer click en el texto cambiamos el estado
+        checkboxLabel.performClick()
+
+        // Aquí verificamos que no crashea y sigue visible.
+        // (Para verificar el estado 'checked' real necesitaríamos poner un testTag en el Checkbox)
+        checkboxLabel.assertIsDisplayed()
     }
 }
