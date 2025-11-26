@@ -477,7 +477,7 @@ private fun strengthColorAndLabel(level: Int): Pair<Color, String> {
  * +1 por cada criterio: largo >= 8, mayúsculas, dígitos, símbolos.
  * Si el largo >= 12, agrega un punto extra (máximo 4).
  */
-private fun calcPasswordStrength(pw: String): Int {
+ fun calcPasswordStrength(pw: String): Int {
     if (pw.isBlank()) return 0
     var score = 0
     if (pw.length >= 8) score++
